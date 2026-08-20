@@ -166,6 +166,7 @@ body{
 }
 .times-text{ font-size:12.5px; color:var(--ink-soft); line-height:1.6; }
 .times-text b{ color:var(--ink); }
+.ticket-actions-group{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
 .elapsed{ font-weight:800; color:var(--pink-deep); }
 .duration{ font-weight:800; color:var(--green-deep); }
 
@@ -233,6 +234,7 @@ input[type="date"]:focus{ outline:none; border-bottom-color:var(--pink); border-
   background:var(--paper-raised); border-radius:var(--radius); box-shadow:0 20px 50px rgba(0,0,0,.35);
   padding:22px 22px 20px; width:100%; max-width:360px;
 }
+.modal-card.modal-card-wide{ max-width:440px; }
 .modal-card h2{ font-size:15px; font-weight:800; margin:0 0 4px 0; }
 .modal-subtitulo{ font-size:12.5px; color:var(--ink-soft); margin:0 0 14px 0; line-height:1.5; }
 .modal-botoes{ display:flex; gap:10px; margin-top:14px; }
@@ -251,9 +253,13 @@ input[type="date"]:focus{ outline:none; border-bottom-color:var(--pink); border-
   body *{ visibility:hidden; }
   #relatorio-resultado, #relatorio-resultado *{ visibility:visible; }
   #relatorio-resultado{ position:absolute; left:0; top:0; width:100%; padding:16px; }
-  .panel{ box-shadow:none; border:1px solid #ccc; break-inside:avoid; }
+  .panel{ box-shadow:none; border:1px solid #ccc; break-inside:avoid; page-break-inside:avoid; }
   .report-table{ font-size:11px; }
   .badge{ border:1px solid currentColor; }
+
+  /* Página 1: total do período. Página 2 em diante: uma por separador. */
+  .report-summary{ break-after:page; page-break-after:always; }
+  .report-card ~ .report-card{ break-before:page; page-break-before:always; }
 }
 
 /* ---------- Cadastro screen ---------- */
@@ -334,11 +340,11 @@ input[type="date"]:focus{ outline:none; border-bottom-color:var(--pink); border-
       <div class="grid">
         <div class="field">
           <label>Nº do pedido</label>
-          <input id="in-numero" type="text" placeholder="" inputmode="numeric">
+          <input id="in-numero" type="number" min="0" placeholder="" inputmode="numeric">
         </div>
         <div class="field">
           <label>Cód. do cliente</label>
-          <input id="in-cliente" type="text" placeholder="">
+          <input id="in-cliente" type="number" min="0" placeholder="" inputmode="numeric">
         </div>
         <div class="field">
           <label>Qtd. de itens</label>
@@ -413,10 +419,10 @@ input[type="date"]:focus{ outline:none; border-bottom-color:var(--pink); border-
     </div>
 
     <div class="panel">
-      <h2>Número do pedido ou cliente</h2>
+      <h2>Número do pedido</h2>
       <div class="field full">
         <label>Buscar</label>
-        <input id="in-busca" type="text" placeholder="Ex: 10245 ou CLI-042">
+        <input id="in-busca" type="number" min="0" placeholder="Ex: 10245" inputmode="numeric">
       </div>
     </div>
 
@@ -435,6 +441,36 @@ input[type="date"]:focus{ outline:none; border-bottom-color:var(--pink); border-
       <div class="modal-botoes">
         <button class="btn" id="modal-senha-cancelar">Cancelar</button>
         <button class="btn primary" id="modal-senha-confirmar">Confirmar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-editar-overlay" class="modal-overlay hidden">
+    <div class="modal-card modal-card-wide">
+      <h2>Editar pedido</h2>
+      <p class="modal-subtitulo">Alterar os dados deste pedido.</p>
+      <div class="grid">
+        <div class="field">
+          <label>Nº do pedido</label>
+          <input id="edit-numero" type="number" min="0" inputmode="numeric">
+        </div>
+        <div class="field">
+          <label>Cód. do cliente</label>
+          <input id="edit-cliente" type="number" min="0" inputmode="numeric">
+        </div>
+        <div class="field">
+          <label>Qtd. de itens</label>
+          <input id="edit-qtd" type="number" min="0" inputmode="numeric">
+        </div>
+        <div class="field">
+          <label>Valor total (R$)</label>
+          <input id="edit-valor" type="number" min="0" step="0.01" inputmode="decimal">
+        </div>
+      </div>
+      <div class="error" id="modal-editar-erro">Preencha o número do pedido.</div>
+      <div class="modal-botoes">
+        <button class="btn" id="modal-editar-cancelar">Cancelar</button>
+        <button class="btn primary" id="modal-editar-salvar">Salvar</button>
       </div>
     </div>
   </div>
@@ -617,6 +653,21 @@ async function removerSeparador(nome){
   renderListaSeparadores();
 }
 
+function pedirSenhaMasterERemoverSeparador(nome){
+  abrirModalSenha(
+    'Remover separador',
+    `Somente Gustavo e Gabriel podem remover "${nome}". Digite a senha master.`,
+    (senhaDigitada) => {
+      const autorizado = Object.values(MASTERS).includes(senhaDigitada);
+      if(autorizado){
+        removerSeparador(nome);
+        return true;
+      }
+      return false;
+    }
+  );
+}
+
 function renderListaSeparadores(){
   const el = document.getElementById('lista-separadores');
   if(!el) return;
@@ -635,7 +686,7 @@ function renderListaSeparadores(){
     btn.addEventListener('click', () => usarSeparador(btn.getAttribute('data-usar')));
   });
   el.querySelectorAll('[data-remover]').forEach(btn=>{
-    btn.addEventListener('click', () => removerSeparador(btn.getAttribute('data-remover')));
+    btn.addEventListener('click', () => pedirSenhaMasterERemoverSeparador(btn.getAttribute('data-remover')));
   });
 }
 
@@ -727,6 +778,21 @@ function pedirSenhaMasterEAbrirRelatorio(){
   );
 }
 
+function pedirSenhaMasterEAbrirBusca(){
+  abrirModalSenha(
+    'Acesso à busca',
+    'Somente Gustavo e Gabriel têm acesso à busca de pedidos. Digite a senha master.',
+    (senhaDigitada) => {
+      const autorizado = Object.values(MASTERS).includes(senhaDigitada);
+      if(autorizado){
+        mostrarTelaBusca();
+        return true;
+      }
+      return false;
+    }
+  );
+}
+
 let limparArmado = false;
 let limparTimer = null;
 document.getElementById('btn-limpar-tudo').addEventListener('click', async () => {
@@ -749,15 +815,29 @@ document.getElementById('btn-limpar-tudo').addEventListener('click', async () =>
   btn.classList.remove('confirm-arm');
   btn.textContent = 'Limpar tudo';
 
-  pedidos = [];
-  separadores = [];
-  separadorAtual = '';
-  await db.remove(STORAGE_KEY);
-  await db.remove(LISTA_KEY);
-  await db.remove(ATIVO_KEY);
-  document.getElementById('app-screen').classList.add('hidden');
-  document.getElementById('cadastro-screen').classList.remove('hidden');
-  renderListaSeparadores();
+  abrirModalSenha(
+    'Confirmar limpeza total',
+    'Isso apaga tudo permanentemente. Somente Gustavo e Gabriel podem autorizar. Digite a senha master.',
+    (senhaDigitada) => {
+      const autorizado = Object.values(MASTERS).includes(senhaDigitada);
+      if(!autorizado) return false;
+
+      (async () => {
+        pedidos = [];
+        separadores = [];
+        separadorAtual = '';
+        await db.remove(STORAGE_KEY);
+        await db.remove(LISTA_KEY);
+        await db.remove(ATIVO_KEY);
+        document.getElementById('app-screen').classList.add('hidden');
+        document.getElementById('cadastro-screen').classList.remove('hidden');
+        await loadSeparadores();
+        renderListaSeparadores();
+      })();
+
+      return true;
+    }
+  );
 });
 document.getElementById('btn-trocar-nome').addEventListener('click', () => mostrarTelaConfig());
 
@@ -777,7 +857,10 @@ function render(){
     btn.addEventListener('click', () => finalizarPedido(btn.getAttribute('data-finish')));
   });
   document.querySelectorAll('[data-del]').forEach(btn=>{
-    btn.addEventListener('click', () => excluirPedido(btn.getAttribute('data-del')));
+    btn.addEventListener('click', () => pedirSenhaMasterEExcluir(btn.getAttribute('data-del')));
+  });
+  document.querySelectorAll('[data-editar]').forEach(btn=>{
+    btn.addEventListener('click', () => pedirSenhaMasterEEditar(btn.getAttribute('data-editar')));
   });
 
   restartTick();
@@ -798,7 +881,10 @@ function ticketAndamento(p){
     </div>
     <div class="ticket-times">
       <div class="times-text">Início: <b>${fmtHora(p.horaInicio)}</b><br>Tempo corrido: <span class="elapsed" data-elapsed="${p.id}">${fmtDuracao(Date.now()-new Date(p.horaInicio))}</span></div>
-      <button class="btn confirm" data-finish="${p.id}">Finalizar pedido</button>
+      <div class="ticket-actions-group">
+        <button class="btn ghost" data-editar="${p.id}">Editar</button>
+        <button class="btn confirm" data-finish="${p.id}">Finalizar pedido</button>
+      </div>
     </div>
   </div>`;
 }
@@ -819,7 +905,10 @@ function ticketFinalizado(p){
     </div>
     <div class="ticket-times">
       <div class="times-text">Início: <b>${fmtHora(p.horaInicio)}</b> &nbsp;&middot;&nbsp; Fim: <b>${fmtHora(p.horaFim)}</b><br>Duração total: <span class="duration">${fmtDuracao(duracao)}</span></div>
-      <button class="btn ghost" data-del="${p.id}">Excluir registro</button>
+      <div class="ticket-actions-group">
+        <button class="btn ghost" data-editar="${p.id}">Editar</button>
+        <button class="btn ghost" data-del="${p.id}">Excluir registro</button>
+      </div>
     </div>
   </div>`;
 }
@@ -881,6 +970,91 @@ async function excluirPedido(id){
   await savePedidos();
   render();
 }
+
+function pedirSenhaMasterEExcluir(id){
+  abrirModalSenha(
+    'Excluir registro',
+    'Somente Gustavo e Gabriel podem excluir um pedido. Digite a senha master.',
+    (senhaDigitada) => {
+      const autorizado = Object.values(MASTERS).includes(senhaDigitada);
+      if(autorizado){
+        excluirPedido(id);
+        return true;
+      }
+      return false;
+    }
+  );
+}
+
+/* =========================================================
+   EDITAR PEDIDO (somente Gustavo e Gabriel)
+   ========================================================= */
+let pedidoEditandoId = null;
+
+function pedirSenhaMasterEEditar(id){
+  abrirModalSenha(
+    'Editar pedido',
+    'Somente Gustavo e Gabriel podem editar um pedido. Digite a senha master.',
+    (senhaDigitada) => {
+      const autorizado = Object.values(MASTERS).includes(senhaDigitada);
+      if(autorizado){
+        abrirModalEditarPedido(id);
+        return true;
+      }
+      return false;
+    }
+  );
+}
+
+function abrirModalEditarPedido(id){
+  const p = pedidos.find(x => x.id === id);
+  if(!p) return;
+  pedidoEditandoId = id;
+  document.getElementById('edit-numero').value = p.numero || '';
+  document.getElementById('edit-cliente').value = p.cliente || '';
+  document.getElementById('edit-qtd').value = p.qtd ?? '';
+  document.getElementById('edit-valor').value = p.valor ?? '';
+  document.getElementById('modal-editar-erro').style.display = 'none';
+  document.getElementById('modal-editar-overlay').classList.remove('hidden');
+}
+
+function fecharModalEditar(){
+  document.getElementById('modal-editar-overlay').classList.add('hidden');
+  pedidoEditandoId = null;
+}
+
+async function salvarEdicaoPedido(){
+  if(!pedidoEditandoId) return;
+  const numero = document.getElementById('edit-numero').value.trim();
+  const cliente = document.getElementById('edit-cliente').value.trim();
+  const qtd = document.getElementById('edit-qtd').value;
+  const valor = document.getElementById('edit-valor').value;
+  const errorEl = document.getElementById('modal-editar-erro');
+
+  if(!numero){
+    errorEl.style.display = 'block';
+    return;
+  }
+  errorEl.style.display = 'none';
+
+  const p = pedidos.find(x => x.id === pedidoEditandoId);
+  if(p){
+    p.numero = numero;
+    p.cliente = cliente;
+    p.qtd = qtd;
+    p.valor = valor;
+    await savePedidos();
+  }
+
+  fecharModalEditar();
+  render();
+  if(!document.getElementById('busca-screen').classList.contains('hidden')){
+    renderResultadoBusca();
+  }
+}
+
+document.getElementById('modal-editar-cancelar').addEventListener('click', fecharModalEditar);
+document.getElementById('modal-editar-salvar').addEventListener('click', salvarEdicaoPedido);
 
 document.getElementById('btn-iniciar').addEventListener('click', iniciarPedido);
 
@@ -1177,7 +1351,7 @@ function mostrarTelaBusca(){
   document.getElementById('busca-screen').classList.remove('hidden');
   const input = document.getElementById('in-busca');
   input.value = '';
-  document.getElementById('busca-resultado').innerHTML = '<div class="empty-state">Digite o número do pedido ou o código do cliente para buscar.</div>';
+  document.getElementById('busca-resultado').innerHTML = '<div class="empty-state">Digite o número do pedido para buscar.</div>';
   input.focus();
 }
 function voltarDaBusca(){
@@ -1190,18 +1364,17 @@ function renderResultadoBusca(){
   const el = document.getElementById('busca-resultado');
 
   if(!termo){
-    el.innerHTML = '<div class="empty-state">Digite o número do pedido ou o código do cliente para buscar.</div>';
+    el.innerHTML = '<div class="empty-state">Digite o número do pedido para buscar.</div>';
     return;
   }
 
   const encontrados = pedidos.filter(p => {
     const numero = String(p.numero || '').toLowerCase();
-    const cliente = String(p.cliente || '').toLowerCase();
-    return numero.includes(termo) || cliente.includes(termo);
+    return numero.includes(termo);
   }).sort((a,b) => new Date(b.horaInicio) - new Date(a.horaInicio));
 
   if(encontrados.length === 0){
-    el.innerHTML = '<div class="empty-state">Nenhum pedido encontrado com esse termo.</div>';
+    el.innerHTML = '<div class="empty-state">Nenhum pedido encontrado com esse número.</div>';
     return;
   }
 
@@ -1223,12 +1396,17 @@ function renderResultadoBusca(){
       </div>
       <div class="ticket-times">
         <div class="times-text">Início: <b>${fmtHora(p.horaInicio)}</b>${p.horaFim ? ` &nbsp;&middot;&nbsp; Fim: <b>${fmtHora(p.horaFim)}</b>` : ''}</div>
+        <button class="btn ghost" data-editar="${p.id}">Editar</button>
       </div>
     </div>`;
   }).join('');
+
+  el.querySelectorAll('[data-editar]').forEach(btn=>{
+    btn.addEventListener('click', () => pedirSenhaMasterEEditar(btn.getAttribute('data-editar')));
+  });
 }
 
-document.getElementById('btn-abrir-busca').addEventListener('click', mostrarTelaBusca);
+document.getElementById('btn-abrir-busca').addEventListener('click', pedirSenhaMasterEAbrirBusca);
 document.getElementById('btn-voltar-busca').addEventListener('click', voltarDaBusca);
 document.getElementById('in-busca').addEventListener('input', renderResultadoBusca);
 
