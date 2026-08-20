@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Painel de Separação — Grupo Freedom</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
 <style>
 @font-face{
   font-family:'Manrope'; font-style:normal; font-weight:400;
@@ -225,6 +227,12 @@ input[type="date"]:focus{ outline:none; border-bottom-color:var(--pink); border-
   .report-table{ font-size:11px; }
 }
 
+/* ---------- Aviso offline ---------- */
+.aviso-offline{
+  background:#fff3cd; color:#7a5b00; border:1px solid #f0d68a; border-radius:var(--radius);
+  padding:10px 14px; font-size:12.5px; font-weight:600; margin-bottom:14px; text-align:center;
+}
+
 /* ---------- Modal de senha ---------- */
 .modal-overlay{
   position:fixed; inset:0; background:rgba(20,20,30,.55);
@@ -276,6 +284,10 @@ input[type="date"]:focus{ outline:none; border-bottom-color:var(--pink); border-
 </head>
 <body>
 <div class="wrap">
+
+  <div id="aviso-offline" class="aviso-offline hidden">
+    ⚠️ Sem conexão com a internet. Os dados não estão sendo sincronizados com os outros celulares no momento.
+  </div>
 
   <div class="cadastro-screen hidden" id="cadastro-screen">
     <div class="letterhead">
@@ -528,6 +540,35 @@ const db = {
   }
 };
 
+// ---------- Firebase (dados compartilhados entre celulares) ----------
+const firebaseConfig = {
+  apiKey: "AIzaSyC0qY136_pDU63xAFUUFaUvHNzQUN0tAaM",
+  authDomain: "separacao-freedom.firebaseapp.com",
+  projectId: "separacao-freedom",
+  storageBucket: "separacao-freedom.firebasestorage.app",
+  messagingSenderId: "520089046437",
+  appId: "1:520089046437:web:b282e77a72b0dc4bda6c4c"
+};
+let fdb = null;
+let firebaseOk = false;
+try{
+  firebase.initializeApp(firebaseConfig);
+  fdb = firebase.firestore();
+  firebaseOk = true;
+}catch(e){
+  console.error('Erro ao iniciar Firebase', e);
+  firebaseOk = false;
+}
+
+function mostrarAvisoSemInternet(){
+  const aviso = document.getElementById('aviso-offline');
+  if(aviso) aviso.classList.remove('hidden');
+}
+function esconderAvisoSemInternet(){
+  const aviso = document.getElementById('aviso-offline');
+  if(aviso) aviso.classList.add('hidden');
+}
+
 function fmtHora(iso){
   const d = new Date(iso);
   return d.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
@@ -556,39 +597,53 @@ function escapeHtml(str){
   return String(str ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-async function loadSeparadores(){
-  try{
-    const raw = await db.get(LISTA_KEY);
-    const bruto = raw ? JSON.parse(raw) : [];
-    // Migração: instalações antigas guardavam so o nome (string). Converte para
-    // o novo formato {nome, senha} mantendo senha vazia nesses casos antigos.
-    let precisaSalvar = false;
-    separadores = bruto.map(item => {
-      if(typeof item === 'string'){
-        precisaSalvar = true;
-        return {nome: item, senha: ''};
+let separadoresCarregados = false;
+let unsubscribeSeparadores = null;
+
+function iniciarSincronizacaoSeparadores(){
+  if(!firebaseOk) return;
+  const ref = fdb.collection('separadores');
+  unsubscribeSeparadores = ref.onSnapshot(async (snapshot) => {
+    separadores = snapshot.docs.map(doc => doc.data());
+    esconderAvisoSemInternet();
+
+    if(!separadoresCarregados){
+      separadoresCarregados = true;
+      // Garante que Gustavo e Gabriel (usuários master) já existam cadastrados,
+      // usando as mesmas senhas do acesso ao relatório. Só cria se ainda não existir,
+      // pra não sobrescrever senha que já tenha sido alterada por eles.
+      for(const [nome, senha] of Object.entries(MASTERS)){
+        if(!separadores.some(s => s.nome === nome)){
+          try{ await ref.doc(nome).set({nome, senha}); }catch(e){}
+        }
       }
-      return item;
-    });
-    if(precisaSalvar) await saveSeparadores();
-  }catch(e){
-    separadores = [];
-  }
-
-  // Garante que Gustavo e Gabriel (usuários master) já existam cadastrados
-  // como separadores, usando as mesmas senhas do acesso ao relatório.
-  let precisaSalvarMasters = false;
-  Object.entries(MASTERS).forEach(([nome, senha]) => {
-    if(!separadores.some(s => s.nome === nome)){
-      separadores.push({nome, senha});
-      precisaSalvarMasters = true;
+      await loadSeparadorAtivoLocal();
+      if(separadorAtual){
+        mostrarTelaApp();
+        render();
+      } else {
+        mostrarTelaConfig();
+      }
+    } else {
+      // Atualizações vindas de outros celulares em tempo real
+      if(!document.getElementById('cadastro-screen').classList.contains('hidden')){
+        renderListaSeparadores();
+      }
+      if(!document.getElementById('app-screen').classList.contains('hidden')){
+        document.getElementById('nome-atual').textContent = separadorAtual;
+        render();
+      }
     }
+  }, (erro) => {
+    console.error('Erro de sincronização (separadores)', erro);
+    mostrarAvisoSemInternet();
   });
-  if(precisaSalvarMasters) await saveSeparadores();
+}
 
+async function loadSeparadorAtivoLocal(){
   try{
-    const raw2 = await db.get(ATIVO_KEY);
-    separadorAtual = raw2 || '';
+    const raw = await db.get(ATIVO_KEY);
+    separadorAtual = raw || '';
   }catch(e){
     separadorAtual = '';
   }
@@ -596,9 +651,7 @@ async function loadSeparadores(){
     separadorAtual = '';
   }
 }
-async function saveSeparadores(){
-  await db.set(LISTA_KEY, JSON.stringify(separadores));
-}
+
 async function setSeparadorAtivo(nome){
   separadorAtual = nome;
   await db.set(ATIVO_KEY, nome);
@@ -613,16 +666,14 @@ async function cadastrarSeparador(){
     return;
   }
   errorEl.style.display = 'none';
-  const existente = separadores.find(s => s.nome === nome);
-  if(existente){
-    existente.senha = senha;
-  } else {
-    separadores.push({nome, senha});
+  try{
+    await fdb.collection('separadores').doc(nome).set({nome, senha});
+  }catch(e){
+    mostrarAvisoSemInternet();
+    return;
   }
-  await saveSeparadores();
   document.getElementById('in-novo-separador').value = '';
   document.getElementById('in-novo-separador-senha').value = '';
-  renderListaSeparadores();
 }
 
 function usarSeparador(nome){
@@ -645,12 +696,15 @@ function usarSeparador(nome){
 }
 
 async function removerSeparador(nome){
-  separadores = separadores.filter(s => s.nome !== nome);
-  await saveSeparadores();
+  try{
+    await fdb.collection('separadores').doc(nome).delete();
+  }catch(e){
+    mostrarAvisoSemInternet();
+    return;
+  }
   if(separadorAtual === nome){
     await setSeparadorAtivo('');
   }
-  renderListaSeparadores();
 }
 
 function pedirSenhaMasterERemoverSeparador(nome){
@@ -690,16 +744,30 @@ function renderListaSeparadores(){
   });
 }
 
-async function loadPedidosSemRender(){
-  try{
-    const raw = await db.get(STORAGE_KEY);
-    pedidos = raw ? JSON.parse(raw) : [];
-  }catch(e){
-    pedidos = [];
-  }
-}
-async function savePedidos(){
-  await db.set(STORAGE_KEY, JSON.stringify(pedidos));
+let pedidosCarregados = false;
+let unsubscribePedidos = null;
+
+function iniciarSincronizacaoPedidos(){
+  if(!firebaseOk) return;
+  const ref = fdb.collection('pedidos');
+  unsubscribePedidos = ref.onSnapshot((snapshot) => {
+    pedidos = snapshot.docs.map(doc => doc.data());
+    esconderAvisoSemInternet();
+    pedidosCarregados = true;
+
+    if(!document.getElementById('app-screen').classList.contains('hidden')){
+      render();
+    }
+    if(!document.getElementById('busca-screen').classList.contains('hidden')){
+      renderResultadoBusca();
+    }
+    if(!document.getElementById('relatorio-screen').classList.contains('hidden')){
+      gerarRelatorio();
+    }
+  }, (erro) => {
+    console.error('Erro de sincronização (pedidos)', erro);
+    mostrarAvisoSemInternet();
+  });
 }
 
 function mostrarTelaConfig(){
@@ -817,22 +885,33 @@ document.getElementById('btn-limpar-tudo').addEventListener('click', async () =>
 
   abrirModalSenha(
     'Confirmar limpeza total',
-    'Isso apaga tudo permanentemente. Somente Gustavo e Gabriel podem autorizar. Digite a senha master.',
+    'Isso apaga tudo permanentemente para todos os celulares conectados. Somente Gustavo e Gabriel podem autorizar. Digite a senha master.',
     (senhaDigitada) => {
       const autorizado = Object.values(MASTERS).includes(senhaDigitada);
       if(!autorizado) return false;
 
       (async () => {
-        pedidos = [];
-        separadores = [];
+        try{
+          const batch = fdb.batch();
+          const pedidosSnap = await fdb.collection('pedidos').get();
+          pedidosSnap.forEach(doc => batch.delete(doc.ref));
+          const separadoresSnap = await fdb.collection('separadores').get();
+          separadoresSnap.forEach(doc => batch.delete(doc.ref));
+          await batch.commit();
+        }catch(e){
+          mostrarAvisoSemInternet();
+          return;
+        }
+
         separadorAtual = '';
-        await db.remove(STORAGE_KEY);
-        await db.remove(LISTA_KEY);
         await db.remove(ATIVO_KEY);
         document.getElementById('app-screen').classList.add('hidden');
         document.getElementById('cadastro-screen').classList.remove('hidden');
-        await loadSeparadores();
-        renderListaSeparadores();
+
+        // Recria Gustavo e Gabriel automaticamente (usuários fixos do sistema)
+        for(const [nome, senha] of Object.entries(MASTERS)){
+          try{ await fdb.collection('separadores').doc(nome).set({nome, senha}); }catch(e){}
+        }
       })();
 
       return true;
@@ -945,30 +1024,34 @@ async function iniciarPedido(){
     horaInicio: new Date().toISOString(),
     horaFim: null
   };
-  pedidos.push(novo);
-  await savePedidos();
+
+  try{
+    await fdb.collection('pedidos').doc(novo.id).set(novo);
+  }catch(e){
+    mostrarAvisoSemInternet();
+    return;
+  }
 
   document.getElementById('in-numero').value = '';
   document.getElementById('in-cliente').value = '';
   document.getElementById('in-qtd').value = '';
   document.getElementById('in-valor').value = '';
-
-  render();
 }
 
 async function finalizarPedido(id){
-  const p = pedidos.find(x => x.id === id);
-  if(p){
-    p.horaFim = new Date().toISOString();
-    await savePedidos();
-    render();
+  try{
+    await fdb.collection('pedidos').doc(id).update({horaFim: new Date().toISOString()});
+  }catch(e){
+    mostrarAvisoSemInternet();
   }
 }
 
 async function excluirPedido(id){
-  pedidos = pedidos.filter(x => x.id !== id);
-  await savePedidos();
-  render();
+  try{
+    await fdb.collection('pedidos').doc(id).delete();
+  }catch(e){
+    mostrarAvisoSemInternet();
+  }
 }
 
 function pedirSenhaMasterEExcluir(id){
@@ -1037,20 +1120,14 @@ async function salvarEdicaoPedido(){
   }
   errorEl.style.display = 'none';
 
-  const p = pedidos.find(x => x.id === pedidoEditandoId);
-  if(p){
-    p.numero = numero;
-    p.cliente = cliente;
-    p.qtd = qtd;
-    p.valor = valor;
-    await savePedidos();
+  try{
+    await fdb.collection('pedidos').doc(pedidoEditandoId).update({numero, cliente, qtd, valor});
+  }catch(e){
+    mostrarAvisoSemInternet();
+    return;
   }
 
   fecharModalEditar();
-  render();
-  if(!document.getElementById('busca-screen').classList.contains('hidden')){
-    renderResultadoBusca();
-  }
 }
 
 document.getElementById('modal-editar-cancelar').addEventListener('click', fecharModalEditar);
@@ -1411,14 +1488,12 @@ document.getElementById('btn-voltar-busca').addEventListener('click', voltarDaBu
 document.getElementById('in-busca').addEventListener('input', renderResultadoBusca);
 
 (async function init(){
-  await loadSeparadores();
-  await loadPedidosSemRender();
-  if(separadorAtual){
-    mostrarTelaApp();
-    render();
-  } else {
-    mostrarTelaConfig();
+  if(!firebaseOk){
+    mostrarAvisoSemInternet();
+    return;
   }
+  iniciarSincronizacaoSeparadores();
+  iniciarSincronizacaoPedidos();
 })();
 </script>
 </body>
