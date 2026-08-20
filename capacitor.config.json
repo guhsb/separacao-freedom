@@ -1,0 +1,8 @@
+{
+  "appId": "com.freedomgrupo.separacao",
+  "appName": "Separacao Freedom",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  }
+}
