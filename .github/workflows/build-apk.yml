@@ -62,8 +62,9 @@ jobs:
           npm install firebase-admin
           node -e "
             const admin = require('firebase-admin');
+            const { getFirestore } = require('firebase-admin/firestore');
             admin.initializeApp({credential: admin.cert(JSON.parse(process.env.FIREBASE_SA))});
-            admin.firestore().collection('config').doc('app').set({versaoApk: ${{ github.run_number }}}, {merge: true})
+            getFirestore().collection('config').doc('app').set({versaoApk: ${{ github.run_number }}}, {merge: true})
               .then(() => { console.log('Versao atualizada no Firestore'); process.exit(0); })
               .catch((e) => { console.error(e); process.exit(1); });
           "
