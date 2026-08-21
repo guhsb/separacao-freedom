@@ -1035,7 +1035,7 @@ function mostrarTelaApp(){
 function pedirSenhaMasterEAbrirMaster(){
   abrirModalSenha(
     'Área master',
-    'Somente Gustavo e Gabriel podem acessar esta área. Digite a senha master.',
+    '',
     (usuarioDigitado, senhaDigitada) => {
       const autorizado = masters.some(m => m.nome === usuarioDigitado && m.senha === senhaDigitada);
       if(autorizado){
