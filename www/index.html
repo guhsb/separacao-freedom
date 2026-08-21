@@ -207,13 +207,20 @@ body{
 .report-stats{
   display:grid; grid-template-columns:repeat(4, minmax(80px,1fr)); gap:10px 14px; margin-bottom:12px;
 }
-.report-table{ width:100%; border-collapse:collapse; font-size:12px; margin-top:4px; }
-.report-table th{
-  text-align:left; padding:6px 8px; background:var(--rule-soft); font-size:9.5px;
-  text-transform:uppercase; letter-spacing:.04em; color:var(--ink-soft); font-weight:700;
+.report-linhas-wrap{ margin-top:4px; display:flex; flex-direction:column; gap:8px; }
+.report-linha{
+  background:var(--paper); border:1px solid var(--rule-soft); border-radius:5px; padding:8px 10px;
 }
-.report-table td{ padding:6px 8px; border-bottom:1px solid var(--rule-soft); }
-.report-table td.num{ text-align:right; }
+.report-linha-topo{
+  display:flex; justify-content:space-between; align-items:baseline; gap:8px; flex-wrap:wrap;
+  margin-bottom:4px;
+}
+.report-linha-pedido{ font-weight:800; font-size:13px; color:var(--ink); }
+.report-linha-cliente{ font-size:11.5px; color:var(--ink-soft); }
+.report-linha-dados{
+  display:flex; flex-wrap:wrap; gap:4px 14px; font-size:11.5px; color:var(--ink-soft);
+}
+.report-linha-dados b{ color:var(--ink); font-weight:600; }
 .pendente-tag{ color:var(--pink-deep); font-weight:700; font-size:10.5px; text-transform:uppercase; }
 
 input[type="date"]{
@@ -224,7 +231,6 @@ input[type="date"]:focus{ outline:none; border-bottom-color:var(--pink); border-
 
 @media (max-width: 480px){
   .report-stats{ grid-template-columns:repeat(2,1fr); }
-  .report-table{ font-size:11px; }
 }
 
 /* ---------- Aviso offline ---------- */
@@ -269,7 +275,7 @@ input[type="date"]:focus{ outline:none; border-bottom-color:var(--pink); border-
   #relatorio-resultado, #relatorio-resultado *{ visibility:visible; }
   #relatorio-resultado{ position:absolute; left:0; top:0; width:100%; padding:16px; }
   .panel{ box-shadow:none; border:1px solid #ccc; break-inside:avoid; page-break-inside:avoid; }
-  .report-table{ font-size:11px; }
+  .report-linha{ break-inside:avoid; page-break-inside:avoid; font-size:10.5px; }
   .badge{ border:1px solid currentColor; }
 
   /* Página 1: total do período. Página 2 em diante: uma por separador. */
@@ -868,12 +874,17 @@ async function removerSeparador(nome){
 }
 
 function pedirSenhaMasterERemoverSeparador(nome){
+  if(masterAutenticado){
+    removerSeparador(nome);
+    return;
+  }
   abrirModalSenha(
     'Remover separador',
     `Somente Gustavo e Gabriel podem remover "${nome}". Digite a senha master.`,
     (usuarioDigitado, senhaDigitada) => {
       const autorizado = masters.some(m => m.nome === usuarioDigitado && m.senha === senhaDigitada);
       if(autorizado){
+        masterAutenticado = true;
         removerSeparador(nome);
         return true;
       }
@@ -888,12 +899,17 @@ function pedirSenhaMasterERemoverSeparador(nome){
 let separadorEditandoNomeOriginal = null;
 
 function pedirSenhaMasterEEditarSeparador(nome){
+  if(masterAutenticado){
+    abrirModalEditarSeparador(nome);
+    return;
+  }
   abrirModalSenha(
     'Editar separador',
     `Somente Gustavo e Gabriel podem editar "${nome}". Digite a senha master.`,
     (usuarioDigitado, senhaDigitada) => {
       const autorizado = masters.some(m => m.nome === usuarioDigitado && m.senha === senhaDigitada);
       if(autorizado){
+        masterAutenticado = true;
         abrirModalEditarSeparador(nome);
         return true;
       }
@@ -1032,6 +1048,8 @@ function mostrarTelaApp(){
   document.getElementById('app-screen').classList.remove('hidden');
 }
 
+let masterAutenticado = false;
+
 function pedirSenhaMasterEAbrirMaster(){
   abrirModalSenha(
     'Área master',
@@ -1039,6 +1057,7 @@ function pedirSenhaMasterEAbrirMaster(){
     (usuarioDigitado, senhaDigitada) => {
       const autorizado = masters.some(m => m.nome === usuarioDigitado && m.senha === senhaDigitada);
       if(autorizado){
+        masterAutenticado = true;
         mostrarTelaMaster();
         return true;
       }
@@ -1059,6 +1078,7 @@ function mostrarTelaMaster(){
 }
 
 function voltarDoMaster(){
+  masterAutenticado = false;
   document.getElementById('master-screen').classList.add('hidden');
   mostrarTelaConfig();
 }
@@ -1186,12 +1206,18 @@ function pedirSenhaMasterECadastrar(){
   }
   errorEl.style.display = 'none';
 
+  if(masterAutenticado){
+    cadastrarSeparador();
+    return;
+  }
+
   abrirModalSenha(
     'Cadastrar separador',
     'Somente Gustavo e Gabriel podem cadastrar um novo separador. Digite a senha master.',
     (usuarioDigitado, senhaDigitada) => {
       const autorizado = masters.some(m => m.nome === usuarioDigitado && m.senha === senhaDigitada);
       if(autorizado){
+        masterAutenticado = true;
         cadastrarSeparador();
         return true;
       }
@@ -1332,6 +1358,37 @@ function pedirSenhaMasterEAbrirBusca(){
 
 let limparArmado = false;
 let limparTimer = null;
+
+async function executarLimpezaTotal(){
+  try{
+    const batch = fdb.batch();
+    const pedidosSnap = await fdb.collection('pedidos').get();
+    pedidosSnap.forEach(doc => batch.delete(doc.ref));
+    const separadoresSnap = await fdb.collection('separadores').get();
+    separadoresSnap.forEach(doc => batch.delete(doc.ref));
+    const mastersSnap = await fdb.collection('masters').get();
+    mastersSnap.forEach(doc => batch.delete(doc.ref));
+    await batch.commit();
+  }catch(e){
+    mostrarAvisoSemInternet();
+    return;
+  }
+
+  separadorAtual = '';
+  masterAutenticado = false;
+  await db.remove(ATIVO_KEY);
+  document.getElementById('app-screen').classList.add('hidden');
+  document.getElementById('master-screen').classList.add('hidden');
+  document.getElementById('cadastro-screen').classList.remove('hidden');
+
+  // Recria Gustavo e Gabriel automaticamente (usuários fixos do sistema),
+  // tanto na lista de separadores quanto na lista de masters.
+  for(const [nome, senha] of Object.entries(SEED_MASTERS)){
+    try{ await fdb.collection('separadores').doc(nome).set({nome, senha}); }catch(e){}
+    try{ await fdb.collection('masters').doc(nome).set({nome, senha}); }catch(e){}
+  }
+}
+
 document.getElementById('btn-limpar-tudo').addEventListener('click', async () => {
   const btn = document.getElementById('btn-limpar-tudo');
 
@@ -1352,47 +1409,25 @@ document.getElementById('btn-limpar-tudo').addEventListener('click', async () =>
   btn.classList.remove('confirm-arm');
   btn.textContent = 'Limpar tudo';
 
+  if(masterAutenticado){
+    executarLimpezaTotal();
+    return;
+  }
+
   abrirModalSenha(
     'Confirmar limpeza total',
     'Isso apaga tudo permanentemente para todos os celulares conectados. Somente Gustavo e Gabriel podem autorizar. Digite a senha master.',
     (usuarioDigitado, senhaDigitada) => {
       const autorizado = masters.some(m => m.nome === usuarioDigitado && m.senha === senhaDigitada);
       if(!autorizado) return false;
-
-      (async () => {
-        try{
-          const batch = fdb.batch();
-          const pedidosSnap = await fdb.collection('pedidos').get();
-          pedidosSnap.forEach(doc => batch.delete(doc.ref));
-          const separadoresSnap = await fdb.collection('separadores').get();
-          separadoresSnap.forEach(doc => batch.delete(doc.ref));
-          const mastersSnap = await fdb.collection('masters').get();
-          mastersSnap.forEach(doc => batch.delete(doc.ref));
-          await batch.commit();
-        }catch(e){
-          mostrarAvisoSemInternet();
-          return;
-        }
-
-        separadorAtual = '';
-        await db.remove(ATIVO_KEY);
-        document.getElementById('app-screen').classList.add('hidden');
-        document.getElementById('master-screen').classList.add('hidden');
-        document.getElementById('cadastro-screen').classList.remove('hidden');
-
-        // Recria Gustavo e Gabriel automaticamente (usuários fixos do sistema),
-        // tanto na lista de separadores quanto na lista de masters.
-        for(const [nome, senha] of Object.entries(SEED_MASTERS)){
-          try{ await fdb.collection('separadores').doc(nome).set({nome, senha}); }catch(e){}
-          try{ await fdb.collection('masters').doc(nome).set({nome, senha}); }catch(e){}
-        }
-      })();
-
+      masterAutenticado = true;
+      executarLimpezaTotal();
       return true;
     }
   );
 });
 document.getElementById('btn-trocar-nome').addEventListener('click', async () => {
+  masterAutenticado = false;
   await setSeparadorAtivo('');
   mostrarTelaConfig();
 });
@@ -1752,15 +1787,20 @@ function gerarRelatorio(){
 
     const linhas = lista.map(p => {
       const dur = calcDuracaoMin(p);
-      return `<tr>
-        <td>#${escapeHtml(p.numero)}</td>
-        <td>${escapeHtml(p.cliente || '—')}</td>
-        <td class="num">${escapeHtml(String(p.qtd ?? '—'))}</td>
-        <td class="num">R$ ${fmtValor(p.valor)}</td>
-        <td>${fmtData(p.horaInicio)} ${fmtHora(p.horaInicio)}</td>
-        <td>${p.horaFim ? (fmtData(p.horaFim) + ' ' + fmtHora(p.horaFim)) : '<span class="pendente-tag">em andamento</span>'}</td>
-        <td class="num">${dur !== null ? fmtDuracao(dur*60000) : '—'}</td>
-      </tr>`;
+      return `
+      <div class="report-linha">
+        <div class="report-linha-topo">
+          <span class="report-linha-pedido">#${escapeHtml(p.numero)}</span>
+          <span class="report-linha-cliente">Cliente ${escapeHtml(p.cliente || '—')}</span>
+        </div>
+        <div class="report-linha-dados">
+          <span><b>Itens:</b> ${escapeHtml(String(p.qtd ?? '—'))}</span>
+          <span><b>Valor:</b> R$ ${fmtValor(p.valor)}</span>
+          <span><b>Início:</b> ${fmtData(p.horaInicio)} ${fmtHora(p.horaInicio)}</span>
+          <span><b>Fim:</b> ${p.horaFim ? (fmtData(p.horaFim) + ' ' + fmtHora(p.horaFim)) : '<span class="pendente-tag">em andamento</span>'}</span>
+          <span><b>Duração:</b> ${dur !== null ? fmtDuracao(dur*60000) : '—'}</span>
+        </div>
+      </div>`;
     }).join('');
 
     return `
@@ -1772,10 +1812,7 @@ function gerarRelatorio(){
         <div><span class="m-label">Valor total</span><span class="m-val amount">R$ ${fmtValor(valorTotal)}</span></div>
         <div><span class="m-label">Tempo médio</span><span class="m-val">${tempoMedioMin !== null ? fmtDuracao(tempoMedioMin*60000) : '—'}</span></div>
       </div>
-      <table class="report-table">
-        <thead><tr><th>Pedido</th><th>Cliente</th><th>Itens</th><th>Valor</th><th>Início</th><th>Fim</th><th>Duração</th></tr></thead>
-        <tbody>${linhas}</tbody>
-      </table>
+      <div class="report-linhas-wrap">${linhas}</div>
     </div>`;
   }).join('');
 
