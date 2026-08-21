@@ -522,11 +522,15 @@ input[type="date"]:focus{ outline:none; border-bottom-color:var(--pink); border-
     <div class="modal-card">
       <h2 id="modal-senha-titulo">Senha</h2>
       <p id="modal-senha-subtitulo" class="modal-subtitulo"></p>
+      <div class="field full" id="modal-senha-campo-usuario">
+        <label>Usuário</label>
+        <input id="modal-senha-usuario" type="text" placeholder="">
+      </div>
       <div class="field full">
         <label>Senha</label>
         <input id="modal-senha-input" type="password" inputmode="numeric" placeholder="">
       </div>
-      <div class="error" id="modal-senha-erro">Senha incorreta. Tente novamente.</div>
+      <div class="error" id="modal-senha-erro">Usuário ou senha incorretos. Tente novamente.</div>
       <div class="modal-botoes">
         <button class="btn" id="modal-senha-cancelar">Cancelar</button>
         <button class="btn primary" id="modal-senha-confirmar">Confirmar</button>
@@ -801,7 +805,7 @@ function usarSeparador(nome){
   abrirModalSenha(
     `Senha de ${nome}`,
     'Digite a senha cadastrada para este separador.',
-    (senhaDigitada) => {
+    (usuarioIgnorado, senhaDigitada) => {
       if(senhaDigitada === senhaCorreta){
         setSeparadorAtivo(nome).then(() => {
           mostrarTelaApp();
@@ -810,7 +814,8 @@ function usarSeparador(nome){
         return true;
       }
       return false;
-    }
+    },
+    false
   );
 }
 
@@ -830,8 +835,8 @@ function pedirSenhaMasterERemoverSeparador(nome){
   abrirModalSenha(
     'Remover separador',
     `Somente Gustavo e Gabriel podem remover "${nome}". Digite a senha master.`,
-    (senhaDigitada) => {
-      const autorizado = masters.some(m => m.senha === senhaDigitada);
+    (usuarioDigitado, senhaDigitada) => {
+      const autorizado = masters.some(m => m.nome === usuarioDigitado && m.senha === senhaDigitada);
       if(autorizado){
         removerSeparador(nome);
         return true;
@@ -850,8 +855,8 @@ function pedirSenhaMasterEEditarSeparador(nome){
   abrirModalSenha(
     'Editar separador',
     `Somente Gustavo e Gabriel podem editar "${nome}". Digite a senha master.`,
-    (senhaDigitada) => {
-      const autorizado = masters.some(m => m.senha === senhaDigitada);
+    (usuarioDigitado, senhaDigitada) => {
+      const autorizado = masters.some(m => m.nome === usuarioDigitado && m.senha === senhaDigitada);
       if(autorizado){
         abrirModalEditarSeparador(nome);
         return true;
@@ -995,8 +1000,8 @@ function pedirSenhaMasterEAbrirMaster(){
   abrirModalSenha(
     'Área master',
     'Somente Gustavo e Gabriel podem acessar esta área. Digite a senha master.',
-    (senhaDigitada) => {
-      const autorizado = masters.some(m => m.senha === senhaDigitada);
+    (usuarioDigitado, senhaDigitada) => {
+      const autorizado = masters.some(m => m.nome === usuarioDigitado && m.senha === senhaDigitada);
       if(autorizado){
         mostrarTelaMaster();
         return true;
@@ -1148,8 +1153,8 @@ function pedirSenhaMasterECadastrar(){
   abrirModalSenha(
     'Cadastrar separador',
     'Somente Gustavo e Gabriel podem cadastrar um novo separador. Digite a senha master.',
-    (senhaDigitada) => {
-      const autorizado = masters.some(m => m.senha === senhaDigitada);
+    (usuarioDigitado, senhaDigitada) => {
+      const autorizado = masters.some(m => m.nome === usuarioDigitado && m.senha === senhaDigitada);
       if(autorizado){
         cadastrarSeparador();
         return true;
@@ -1166,23 +1171,28 @@ document.getElementById('btn-cadastrar-separador').addEventListener('click', ped
    ========================================================= */
 let modalSenhaCallback = null;
 
-function abrirModalSenha(titulo, subtitulo, callback){
+function abrirModalSenha(titulo, subtitulo, callback, mostrarUsuario){
+  if(mostrarUsuario === undefined) mostrarUsuario = true;
   document.getElementById('modal-senha-titulo').textContent = titulo;
   document.getElementById('modal-senha-subtitulo').textContent = subtitulo || '';
+  document.getElementById('modal-senha-usuario').value = '';
   document.getElementById('modal-senha-input').value = '';
   document.getElementById('modal-senha-erro').style.display = 'none';
+  document.getElementById('modal-senha-campo-usuario').classList.toggle('hidden', !mostrarUsuario);
   document.getElementById('modal-senha-overlay').classList.remove('hidden');
   modalSenhaCallback = callback;
-  setTimeout(() => document.getElementById('modal-senha-input').focus(), 50);
+  const idParaFoco = mostrarUsuario ? 'modal-senha-usuario' : 'modal-senha-input';
+  setTimeout(() => document.getElementById(idParaFoco).focus(), 50);
 }
 function fecharModalSenha(){
   document.getElementById('modal-senha-overlay').classList.add('hidden');
   modalSenhaCallback = null;
 }
 function confirmarModalSenha(){
+  const usuario = document.getElementById('modal-senha-usuario').value.trim();
   const senha = document.getElementById('modal-senha-input').value;
   if(!modalSenhaCallback) return;
-  const ok = modalSenhaCallback(senha);
+  const ok = modalSenhaCallback(usuario, senha);
   if(ok === false){
     document.getElementById('modal-senha-erro').style.display = 'block';
     document.getElementById('modal-senha-input').value = '';
@@ -1198,6 +1208,12 @@ document.getElementById('modal-senha-input').addEventListener('keydown', (e) => 
   if(e.key === 'Enter'){
     e.preventDefault();
     confirmarModalSenha();
+  }
+});
+document.getElementById('modal-senha-usuario').addEventListener('keydown', (e) => {
+  if(e.key === 'Enter'){
+    e.preventDefault();
+    document.getElementById('modal-senha-input').focus();
   }
 });
 
@@ -1252,8 +1268,8 @@ function pedirSenhaMasterEAbrirRelatorio(){
   abrirModalSenha(
     'Acesso ao relatório',
     'Somente Gustavo e Gabriel têm acesso ao relatório. Digite a senha master.',
-    (senhaDigitada) => {
-      const autorizado = masters.some(m => m.senha === senhaDigitada);
+    (usuarioDigitado, senhaDigitada) => {
+      const autorizado = masters.some(m => m.nome === usuarioDigitado && m.senha === senhaDigitada);
       if(autorizado){
         mostrarTelaRelatorio();
         return true;
@@ -1267,8 +1283,8 @@ function pedirSenhaMasterEAbrirBusca(){
   abrirModalSenha(
     'Acesso à busca',
     'Somente Gustavo e Gabriel têm acesso à busca de pedidos. Digite a senha master.',
-    (senhaDigitada) => {
-      const autorizado = masters.some(m => m.senha === senhaDigitada);
+    (usuarioDigitado, senhaDigitada) => {
+      const autorizado = masters.some(m => m.nome === usuarioDigitado && m.senha === senhaDigitada);
       if(autorizado){
         mostrarTelaBusca();
         return true;
@@ -1303,8 +1319,8 @@ document.getElementById('btn-limpar-tudo').addEventListener('click', async () =>
   abrirModalSenha(
     'Confirmar limpeza total',
     'Isso apaga tudo permanentemente para todos os celulares conectados. Somente Gustavo e Gabriel podem autorizar. Digite a senha master.',
-    (senhaDigitada) => {
-      const autorizado = masters.some(m => m.senha === senhaDigitada);
+    (usuarioDigitado, senhaDigitada) => {
+      const autorizado = masters.some(m => m.nome === usuarioDigitado && m.senha === senhaDigitada);
       if(!autorizado) return false;
 
       (async () => {
@@ -1486,8 +1502,8 @@ function pedirSenhaMasterEExcluir(id){
   abrirModalSenha(
     'Excluir registro',
     'Somente Gustavo e Gabriel podem excluir um pedido. Digite a senha master.',
-    (senhaDigitada) => {
-      const autorizado = masters.some(m => m.senha === senhaDigitada);
+    (usuarioDigitado, senhaDigitada) => {
+      const autorizado = masters.some(m => m.nome === usuarioDigitado && m.senha === senhaDigitada);
       if(autorizado){
         excluirPedido(id);
         return true;
@@ -1506,8 +1522,8 @@ function pedirSenhaMasterEEditar(id){
   abrirModalSenha(
     'Editar pedido',
     'Somente Gustavo e Gabriel podem editar um pedido. Digite a senha master.',
-    (senhaDigitada) => {
-      const autorizado = masters.some(m => m.senha === senhaDigitada);
+    (usuarioDigitado, senhaDigitada) => {
+      const autorizado = masters.some(m => m.nome === usuarioDigitado && m.senha === senhaDigitada);
       if(autorizado){
         abrirModalEditarPedido(id);
         return true;
