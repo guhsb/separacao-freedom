@@ -28,6 +28,9 @@ jobs:
       - name: Install npm dependencies
         run: npm install
 
+      - name: Grava numero do build no app
+        run: sed -i "s/const APP_BUILD = 0;/const APP_BUILD = ${{ github.run_number }};/" www/index.html
+
       - name: Sync Capacitor
         run: npx cap sync android
 
@@ -52,3 +55,17 @@ jobs:
           files: android/app/build/outputs/apk/debug/app-debug.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Avisa o app qual e a versao mais recente
+        if: success()
+        run: |
+          npm install firebase-admin
+          node -e "
+            const admin = require('firebase-admin');
+            admin.initializeApp({credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_SA))});
+            admin.firestore().collection('config').doc('app').set({versaoApk: ${{ github.run_number }}}, {merge: true})
+              .then(() => { console.log('Versao atualizada no Firestore'); process.exit(0); })
+              .catch((e) => { console.error(e); process.exit(1); });
+          "
+        env:
+          FIREBASE_SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_SEPARACAO_FREEDOM }}

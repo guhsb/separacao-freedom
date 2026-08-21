@@ -232,6 +232,13 @@ input[type="date"]:focus{ outline:none; border-bottom-color:var(--pink); border-
   background:#fff3cd; color:#7a5b00; border:1px solid #f0d68a; border-radius:var(--radius);
   padding:10px 14px; font-size:12.5px; font-weight:600; margin-bottom:14px; text-align:center;
 }
+.aviso-atualizacao{
+  background:#e7f0ff; color:#1a4a8a; border:1px solid #a8c8f0; border-radius:var(--radius);
+  padding:10px 14px; font-size:12.5px; font-weight:600; margin-bottom:14px; text-align:center;
+}
+.aviso-atualizacao a{
+  color:var(--pink-deep); text-decoration:underline; margin-left:6px; font-weight:800;
+}
 
 /* ---------- Modal de senha ---------- */
 .modal-overlay{
@@ -287,6 +294,11 @@ input[type="date"]:focus{ outline:none; border-bottom-color:var(--pink); border-
 
   <div id="aviso-offline" class="aviso-offline hidden">
     ⚠️ Sem conexão com a internet. Os dados não estão sendo sincronizados com os outros celulares no momento.
+  </div>
+
+  <div id="aviso-atualizacao" class="aviso-atualizacao hidden">
+    🔄 Uma nova versão do app está disponível.
+    <a href="https://github.com/guhsb/separacao-freedom/releases/latest" target="_blank" rel="noopener">Baixar atualização</a>
   </div>
 
   <div class="cadastro-screen hidden" id="cadastro-screen">
@@ -676,6 +688,30 @@ function mostrarAvisoSemInternet(){
 function esconderAvisoSemInternet(){
   const aviso = document.getElementById('aviso-offline');
   if(aviso) aviso.classList.add('hidden');
+}
+
+// Número do build deste APK. É substituído automaticamente pelo GitHub Actions
+// a cada compilação (veja o passo "Grava numero do build" no workflow).
+// No site (navegador), esse valor não importa: o site sempre já é a versão mais
+// recente assim que a página é aberta, então o aviso nunca aparece lá.
+const APP_BUILD = 0;
+
+function isNativeApp(){
+  return !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform());
+}
+
+function iniciarVerificacaoAtualizacao(){
+  if(!firebaseOk || !isNativeApp()) return;
+  fdb.collection('config').doc('app').onSnapshot((doc) => {
+    if(!doc.exists) return;
+    const versaoMaisRecente = doc.data().versaoApk || 0;
+    if(versaoMaisRecente > APP_BUILD){
+      const aviso = document.getElementById('aviso-atualizacao');
+      if(aviso) aviso.classList.remove('hidden');
+    }
+  }, (erro) => {
+    console.error('Erro ao verificar atualização', erro);
+  });
 }
 
 const FUSO_BRASILIA = 'America/Sao_Paulo';
@@ -1972,6 +2008,7 @@ document.getElementById('in-busca').addEventListener('input', renderResultadoBus
   iniciarSincronizacaoMasters();
   iniciarSincronizacaoSeparadores();
   iniciarSincronizacaoPedidos();
+  iniciarVerificacaoAtualizacao();
 })();
 </script>
 </body>
