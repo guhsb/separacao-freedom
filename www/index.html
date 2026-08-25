@@ -1151,12 +1151,13 @@ const db = {
   }
 };
 
-// ---------- Supabase (banco novo, sem importação do Firebase) ----------
+// ---------- Supabase (banco novo, sem importação de dados antigos) ----------
 const SUPABASE_URL = 'https://pdpuclwikqdxppsmnubs.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_hiI4s-wGrHkN4BGhVpe63g_4rRps0YE';
 let supabaseClient = null;
+let supabaseCompat = null;
 let fdb = null;
-let firebaseOk = false;
+let supabaseOk = false;
 
 function criarDocSupabase(row){
   const dados = row && row.dados && typeof row.dados === 'object' ? row.dados : {};
@@ -1240,11 +1241,11 @@ try{
     const transacao = {get: ref => ref.get(), set: (ref, dados) => ref.set(dados), update: (ref, dados) => ref.update(dados)};
     return callback(transacao);
   }};
-  firebase = {firestore: {FieldValue: {serverTimestamp: () => new Date().toISOString()}, Timestamp: {fromDate: d => d instanceof Date ? d.toISOString() : d}}};
-  firebaseOk = true;
+  supabaseCompat = {firestore: {FieldValue: {serverTimestamp: () => new Date().toISOString()}, Timestamp: {fromDate: d => d instanceof Date ? d.toISOString() : d}}};
+  supabaseOk = true;
 }catch(e){
   console.error('Erro ao iniciar Supabase', e);
-  firebaseOk = false;
+  supabaseOk = false;
 }
 
 function mostrarAvisoSemInternet(){
@@ -1256,7 +1257,7 @@ function esconderAvisoSemInternet(){
   if(aviso) aviso.classList.add('hidden');
 }
 
-// Sincronização de relógio com o servidor do Firebase. Em vez de confiar no
+// Sincronização de relógio com o servidor do Supabase. Em vez de confiar no
 // relógio do celular (que pode estar atrasado/adiantado), calculamos a
 // diferença entre o relógio do aparelho e o relógio real do servidor, e
 // aplicamos essa correção em qualquer cálculo de "agora" no app — assim o
@@ -1265,11 +1266,11 @@ function esconderAvisoSemInternet(){
 let relogioOffsetMs = 0;
 
 async function sincronizarRelogioServidor(){
-  if(!firebaseOk) return;
+  if(!supabaseOk) return;
   try{
     const ref = fdb.collection('config').doc('clock_sync');
     const t0 = Date.now();
-    await ref.set({ts: firebase.firestore.FieldValue.serverTimestamp()});
+    await ref.set({ts: supabaseCompat.firestore.FieldValue.serverTimestamp()});
     const t1 = Date.now();
     const snap = await ref.get({source: 'server'});
     const dados = snap.data();
@@ -1330,7 +1331,7 @@ function isNativeApp(){
 }
 
 function iniciarVerificacaoAtualizacao(){
-  if(!firebaseOk || !isNativeApp()) return;
+  if(!supabaseOk || !isNativeApp()) return;
   fdb.collection('config').doc('app').onSnapshot((doc) => {
     if(!doc.exists) return;
     const versaoMaisRecente = doc.data().versaoApk || 0;
@@ -1386,7 +1387,7 @@ let separadoresCarregados = false;
 let unsubscribeSeparadores = null;
 
 function iniciarSincronizacaoSeparadores(){
-  if(!firebaseOk) return;
+  if(!supabaseOk) return;
   const ref = fdb.collection('separadores');
   unsubscribeSeparadores = ref.onSnapshot(async (snapshot) => {
     separadores = snapshot.docs.map(doc => doc.data());
@@ -1543,7 +1544,7 @@ let pedidosCarregados = false;
 let unsubscribePedidos = null;
 
 function iniciarSincronizacaoPedidos(){
-  if(!firebaseOk) return;
+  if(!supabaseOk) return;
   const ref = fdb.collection('pedidos');
   unsubscribePedidos = ref.onSnapshot((snapshot) => {
     pedidos = snapshot.docs.map(doc => doc.data());
@@ -1908,7 +1909,7 @@ const SEED_MASTERS = { 'Gustavo': '151002', 'Gabriel': '190605' };
 // usuários master, para nunca acontecer de ninguém conseguir entrar no app.
 let seedMastersGarantido = false;
 async function garantirMastersPadrao(){
-  if(!firebaseOk || seedMastersGarantido) return;
+  if(!supabaseOk || seedMastersGarantido) return;
   seedMastersGarantido = true;
   for(const [nome, senha] of Object.entries(SEED_MASTERS)){
     if(!usuarios.some(u => u.nome === nome)){
@@ -1945,7 +1946,7 @@ let usuariosCarregados = false;
 let usuarioLogado = null;
 
 function iniciarSincronizacaoUsuarios(){
-  if(!firebaseOk) return;
+  if(!supabaseOk) return;
   fdb.collection('usuarios').onSnapshot(async (snapshot) => {
     usuarios = snapshot.docs.map(doc => doc.data());
     if(!document.getElementById('master-screen').classList.contains('hidden')){
@@ -2037,7 +2038,7 @@ async function migrarUsuariosAntigos(){
 }
 
 function iniciarSincronizacaoProdutosBarcode(){
-  if(!firebaseOk) return;
+  if(!supabaseOk) return;
   fdb.collection('produtos_barcode').onSnapshot((snapshot) => {
     const novoMapa = {};
     snapshot.docs.forEach(doc => {
@@ -2049,7 +2050,7 @@ function iniciarSincronizacaoProdutosBarcode(){
 }
 
 function iniciarSincronizacaoPedidosCatalogo(){
-  if(!firebaseOk) return;
+  if(!supabaseOk) return;
   fdb.collection('pedidos_catalogo').onSnapshot((snapshot) => {
     pedidosCatalogo = snapshot.docs.map(doc => doc.data());
     if(!document.getElementById('pedidos-area-screen').classList.contains('hidden')){
@@ -2066,7 +2067,7 @@ function iniciarSincronizacaoPedidosCatalogo(){
 }
 
 function iniciarSincronizacaoRedesConfig(){
-  if(!firebaseOk) return;
+  if(!supabaseOk) return;
   fdb.collection('redes_config').onSnapshot((snapshot) => {
     redesConfig = snapshot.docs.map(doc => doc.data());
     if(!document.getElementById('pedidos-area-screen').classList.contains('hidden')){
@@ -2077,7 +2078,7 @@ function iniciarSincronizacaoRedesConfig(){
 }
 
 function iniciarSincronizacaoItensBloqueados(){
-  if(!firebaseOk) return;
+  if(!supabaseOk) return;
   fdb.collection('itens_bloqueados').onSnapshot((snapshot) => {
     itensBloqueados = snapshot.docs.map(doc => doc.data());
     if(!document.getElementById('pedidos-area-screen').classList.contains('hidden')){
@@ -2088,7 +2089,7 @@ function iniciarSincronizacaoItensBloqueados(){
 }
 
 function iniciarSincronizacaoClientesRede(){
-  if(!firebaseOk) return;
+  if(!supabaseOk) return;
   fdb.collection('clientes_rede').onSnapshot((snapshot) => {
     clientesRede = snapshot.docs.map(doc => doc.data());
   }, (erro) => console.error('Erro de sincronização (clientes/rede)', erro));
@@ -3581,7 +3582,7 @@ async function iniciarPedido(){
       const novo = {
         id: numero,
         numero, cliente, nome: separadorAtual, qtd, valor,
-        horaInicio: firebase.firestore.FieldValue.serverTimestamp(),
+        horaInicio: supabaseCompat.firestore.FieldValue.serverTimestamp(),
         horaFim: null
       };
       transaction.set(ref, novo);
@@ -3617,7 +3618,7 @@ async function finalizarPedido(id){
     }
   }
   try{
-    await fdb.collection('pedidos').doc(id).update({horaFim: firebase.firestore.FieldValue.serverTimestamp()});
+    await fdb.collection('pedidos').doc(id).update({horaFim: supabaseCompat.firestore.FieldValue.serverTimestamp()});
     mostrarToast('Pedido finalizado com sucesso.', 'ok');
   }catch(e){
     mostrarAvisoSemInternet();
@@ -3838,9 +3839,9 @@ async function salvarEdicaoPedido(){
   errorEl.style.display = 'none';
 
   const updateData = {numero, cliente, qtd, valor};
-  updateData.horaInicio = firebase.firestore.Timestamp.fromDate(doInputParaDate(valorInicio));
+  updateData.horaInicio = supabaseCompat.firestore.Timestamp.fromDate(doInputParaDate(valorInicio));
   if(valorFim){
-    updateData.horaFim = firebase.firestore.Timestamp.fromDate(doInputParaDate(valorFim));
+    updateData.horaFim = supabaseCompat.firestore.Timestamp.fromDate(doInputParaDate(valorFim));
   }
 
   try{
@@ -4080,7 +4081,7 @@ async function iniciarTodosPedidosCliente(){
           valor: p.valorTotal,
           tipoPedido: p.tipoPedido || obterTipoPedido(p.codPortador),
           itens: (p.itens || []).map(it => ({...it, confirmado: !!it.confirmado})),
-          horaInicio: firebase.firestore.FieldValue.serverTimestamp(),
+          horaInicio: supabaseCompat.firestore.FieldValue.serverTimestamp(),
           horaFim: null
         };
         transaction.set(refs[i], novo);
@@ -4512,7 +4513,7 @@ document.getElementById('btn-voltar-busca').addEventListener('click', voltarDaBu
 document.getElementById('in-busca').addEventListener('input', renderResultadoBusca);
 
 (async function init(){
-  if(!firebaseOk){
+  if(!supabaseOk){
     mostrarAvisoSemInternet();
     return;
   }
