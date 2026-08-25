@@ -1174,7 +1174,7 @@ function criarColecaoSupabase(nomeColecao){
       valor = {...(atual.data?.dados || {}), ...valor};
     }
     const resposta = await supabaseClient.from(nomeColecao).upsert({
-      id: String(id), dados: valor, atualizado_em: new Date().toISOString()
+      id: String(id), dados: valor, atualizado_em: agoraServidorISO()
     }, {onConflict: 'id'});
     if(resposta.error) throw resposta.error;
     return resposta;
@@ -1241,7 +1241,7 @@ try{
     const transacao = {get: ref => ref.get(), set: (ref, dados) => ref.set(dados), update: (ref, dados) => ref.update(dados)};
     return callback(transacao);
   }};
-  supabaseCompat = {firestore: {FieldValue: {serverTimestamp: () => new Date().toISOString()}, Timestamp: {fromDate: d => d instanceof Date ? d.toISOString() : d}}};
+  supabaseCompat = {firestore: {FieldValue: {serverTimestamp: () => agoraServidorISO()}, Timestamp: {fromDate: d => d instanceof Date ? d.toISOString() : d}}};
   supabaseOk = true;
 }catch(e){
   console.error('Erro ao iniciar Supabase', e);
@@ -1268,17 +1268,14 @@ let relogioOffsetMs = 0;
 async function sincronizarRelogioServidor(){
   if(!supabaseOk) return;
   try{
-    const ref = fdb.collection('config').doc('clock_sync');
     const t0 = Date.now();
-    await ref.set({ts: supabaseCompat.firestore.FieldValue.serverTimestamp()});
+    const resposta = await supabaseClient.rpc('horario_servidor');
     const t1 = Date.now();
-    const snap = await ref.get({source: 'server'});
-    const dados = snap.data();
-    const ts = dados && dados.ts;
-    if(ts && typeof ts.toMillis === 'function'){
-      const rttEscrita = t1 - t0;
-      const momentoLocalEstimado = t0 + rttEscrita / 2;
-      relogioOffsetMs = ts.toMillis() - momentoLocalEstimado;
+    if(resposta.error) throw resposta.error;
+    const valor = Array.isArray(resposta.data) ? resposta.data[0] : resposta.data;
+    const servidorMs = new Date(valor).getTime();
+    if(Number.isFinite(servidorMs)){
+      relogioOffsetMs = servidorMs - ((t0 + t1) / 2);
     }
   }catch(e){
     console.error('Erro ao sincronizar relógio com o servidor', e);
@@ -1542,6 +1539,23 @@ function renderListaUsuarios(){
 
 let pedidosCarregados = false;
 let unsubscribePedidos = null;
+let compactacaoPedidosIniciada = false;
+
+async function compactarPedidosAntigos(){
+  if(!supabaseOk || compactacaoPedidosIniciada) return;
+  compactacaoPedidosIniciada = true;
+  try{
+    const resposta = await supabaseClient.rpc('compactar_pedidos_finalizados', {p_dias: 2});
+    if(resposta.error){
+      console.warn('Compactação ainda não disponível:', resposta.error.message);
+      return;
+    }
+    const quantidade = Number(resposta.data || 0);
+    if(quantidade > 0) console.info(`${quantidade} pedido(s) antigo(s) compactado(s).`);
+  }catch(e){
+    console.warn('Não foi possível compactar pedidos antigos:', e);
+  }
+}
 
 function iniciarSincronizacaoPedidos(){
   if(!supabaseOk) return;
@@ -3283,6 +3297,22 @@ document.getElementById('btn-trocar-nome').addEventListener('click', async () =>
   voltarAoMenuOuLogin();
 });
 
+function renderPedidosAgrupados(lista, ticketFn){
+  const grupos = new Map();
+  lista.forEach(p => {
+    const chave = String(p.codCliente || p.cliente || 'sem-cliente').trim().toLowerCase();
+    if(!grupos.has(chave)) grupos.set(chave, {cliente: p.cliente || p.codCliente || 'Cliente não informado', pedidos: []});
+    grupos.get(chave).pedidos.push(p);
+  });
+  return Array.from(grupos.values()).map(grupo => `
+    <section class="cliente-grupo" style="margin-bottom:18px;">
+      <div style="font-weight:800;color:#5b3150;margin:6px 0 10px;padding:8px 12px;border-left:4px solid #c72f78;background:#fff4f9;border-radius:6px;">
+        Cliente: ${escapeHtml(String(grupo.cliente))} <span style="font-weight:500;color:#777;">(${grupo.pedidos.length} pedido(s))</span>
+      </div>
+      ${grupo.pedidos.map(ticketFn).join('')}
+    </section>`).join('');
+}
+
 function render(){
   const ativoNorm = (separadorAtual || '').trim().toLowerCase();
   const meusPedidos = pedidos.filter(p => (p.nome || '').trim().toLowerCase() === ativoNorm);
@@ -3297,8 +3327,8 @@ function render(){
 
   aplicarEstadoNovoPedido(andamento.length > 0);
 
-  elAnd.innerHTML = andamento.length ? andamento.map(ticketAndamento).join('') : '<div class="empty-state">Nenhum pedido em andamento. Inicie um pedido acima.</div>';
-  elFin.innerHTML = finalizados.length ? finalizados.map(ticketFinalizado).join('') : '<div class="empty-state">Nenhum pedido finalizado hoje ainda.</div>';
+  elAnd.innerHTML = andamento.length ? renderPedidosAgrupados(andamento, ticketAndamento) : '<div class="empty-state">Nenhum pedido em andamento. Inicie um pedido acima.</div>';
+  elFin.innerHTML = finalizados.length ? renderPedidosAgrupados(finalizados, ticketFinalizado) : '<div class="empty-state">Nenhum pedido finalizado hoje ainda.</div>';
 
   document.querySelectorAll('[data-finish]').forEach(btn=>{
     btn.addEventListener('click', () => finalizarPedido(btn.getAttribute('data-finish')));
@@ -4499,11 +4529,12 @@ document.getElementById('in-busca').addEventListener('input', renderResultadoBus
     mostrarAvisoSemInternet();
     return;
   }
-  sincronizarRelogioServidor();
+  await sincronizarRelogioServidor();
   setInterval(sincronizarRelogioServidor, 5 * 60 * 1000);
   iniciarSincronizacaoUsuarios();
   iniciarSincronizacaoSeparadores();
   iniciarSincronizacaoPedidos();
+  compactarPedidosAntigos();
   iniciarSincronizacaoPedidosCatalogo();
   iniciarSincronizacaoRedesConfig();
   iniciarSincronizacaoItensBloqueados();
