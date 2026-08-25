@@ -511,7 +511,7 @@ input[type="file"]{
 
   <div id="aviso-atualizacao" class="aviso-atualizacao hidden">
     🔄 Uma nova versão do app está disponível.
-    <a href="https://github.com/guhsb/separacao-freedom/releases/latest/download/app-debug.apk" target="_blank" rel="noopener">Baixar atualização</a>
+    <a id="link-atualizacao-apk" href="https://github.com/guhsb/separacao-freedom/releases/latest/download/app-debug.apk" download="separacao-freedom.apk">Baixar APK direto</a>
   </div>
 
   <div class="cadastro-screen hidden" id="cadastro-screen">
@@ -1331,7 +1331,10 @@ function iniciarVerificacaoAtualizacao(){
   if(!supabaseOk || !isNativeApp()) return;
   fdb.collection('config').doc('app').onSnapshot((doc) => {
     if(!doc.exists) return;
-    const versaoMaisRecente = doc.data().versaoApk || 0;
+    const dados = doc.data() || {};
+    const versaoMaisRecente = Number(dados.versaoApk || 0);
+    const link = document.getElementById('link-atualizacao-apk');
+    if(link && dados.apkUrl) link.href = dados.apkUrl;
     if(versaoMaisRecente > APP_BUILD){
       const aviso = document.getElementById('aviso-atualizacao');
       if(aviso) aviso.classList.remove('hidden');

@@ -12,10 +12,10 @@ jobs:
       contents: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '22'
 
@@ -30,6 +30,23 @@ jobs:
 
       - name: Grava numero do build no app
         run: sed -i "s/const APP_BUILD = 0;/const APP_BUILD = ${{ github.run_number }};/" www/index.html
+
+      - name: Publica versão disponível no Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "Secrets do Supabase ainda não configurados; pulando publicação da versão."
+            exit 0
+          fi
+          VERSION="${{ github.run_number }}"
+          APK_URL="https://github.com/${{ github.repository }}/releases/latest/download/app-debug.apk"
+          curl --fail-with-body -sS -X POST "$SUPABASE_URL/rest/v1/rpc/publicar_versao_apk" \\
+            -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \\
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \\
+            -H "Content-Type: application/json" \\
+            -d "{\"p_versao\":$VERSION,\"p_url\":\"$APK_URL\"}"
 
       - name: Sync Capacitor
         run: npx cap sync android
