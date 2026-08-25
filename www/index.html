@@ -357,13 +357,19 @@ input[type="file"]{
 .dash-kpi.alerta .dash-kpi-valor{ color:#8a5a00; }
 .dash-kpi.alerta{ background:rgba(255,180,0,.10); border-color:rgba(255,180,0,.4); }
 
+#dashboard-screen .panel{ overflow:hidden; }
+#dashboard-screen .times-text{ overflow-wrap:anywhere; }
+
 .dash-linha{
-  display:flex; align-items:center; gap:10px; padding:8px 0;
+  display:flex; align-items:center; gap:8px; padding:8px 0; flex-wrap:wrap;
   border-bottom:1px solid var(--rule-soft); font-size:13px;
 }
 .dash-linha:last-child{ border-bottom:none; }
-.dash-linha-nome{ min-width:96px; font-weight:700; color:var(--ink); }
-.dash-linha-barra{ flex:1; background:var(--rule-soft); border-radius:999px; height:14px; overflow:hidden; }
+.dash-linha-nome{
+  font-weight:700; color:var(--ink); flex:1 1 auto; min-width:0;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.dash-linha-barra{ flex:1 1 90px; min-width:60px; background:var(--rule-soft); border-radius:999px; height:14px; overflow:hidden; }
 .dash-linha-fill{ height:100%; background:linear-gradient(90deg,var(--pink),var(--pink-deep)); border-radius:999px; min-width:4px; }
 .dash-linha-valor{ font-weight:800; color:var(--pink-deep); flex-shrink:0; font-size:12.5px; }
 .dash-status-tag{
@@ -371,10 +377,14 @@ input[type="file"]{
 }
 .dash-status-ativo{ background:rgba(233,70,140,.12); color:var(--pink-deep); }
 .dash-status-parado{ background:var(--rule-soft); color:var(--ink-soft); }
-.dash-hora-grid{ display:flex; align-items:flex-end; gap:4px; height:120px; margin-top:10px; }
-.dash-hora-col{ flex:1; display:flex; flex-direction:column; align-items:center; gap:4px; height:100%; justify-content:flex-end; }
+.dash-hora-wrap{ width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+.dash-hora-grid{ display:flex; align-items:flex-end; gap:4px; height:120px; margin-top:10px; min-width:min-content; }
+.dash-hora-col{
+  flex:1 0 26px; display:flex; flex-direction:column; align-items:center; gap:4px;
+  height:100%; justify-content:flex-end;
+}
 .dash-hora-barra{ width:100%; background:linear-gradient(180deg,var(--pink),var(--pink-deep)); border-radius:3px 3px 0 0; min-height:2px; }
-.dash-hora-label{ font-size:9px; color:var(--ink-soft); font-weight:700; }
+.dash-hora-label{ font-size:9px; color:var(--ink-soft); font-weight:700; white-space:nowrap; }
 .dash-hora-valor{ font-size:10px; font-weight:800; color:var(--pink-deep); }
 
 @media (max-width: 480px){
@@ -1309,11 +1319,8 @@ function iniciarSincronizacaoSeparadores(){
 
     if(!separadoresCarregados){
       separadoresCarregados = true;
-      // Login é sempre exigido ao abrir o app: mesmo que exista uma sessão de
-      // separação salva no aparelho, a pessoa precisa se identificar de novo
-      // para o app saber quais permissões liberar no menu.
-      await setSeparadorAtivo('');
-      mostrarTelaConfig();
+      // A tela inicial é decidida em restaurarSessaoOuPedirLogin(), chamada
+      // quando a lista de usuários termina de carregar.
     } else {
       // Atualizações vindas de outros celulares em tempo real
       if(!document.getElementById('app-screen').classList.contains('hidden')){
@@ -1342,6 +1349,29 @@ async function loadSeparadorAtivoLocal(){
 async function setSeparadorAtivo(nome){
   separadorAtual = nome;
   await db.set(ATIVO_KEY, nome);
+}
+
+// Guarda no aparelho quem está logado, para a pessoa não precisar entrar de novo
+// toda vez que fechar e reabrir o app. O logout só acontece quando ela clica em
+// "sair" no menu.
+const USUARIO_KEY = 'usuario-logado';
+
+async function salvarUsuarioLogadoLocal(nome){
+  try{ await db.set(USUARIO_KEY, nome || ''); }catch(e){}
+}
+
+async function restaurarUsuarioLogadoLocal(){
+  try{
+    const nome = await db.get(USUARIO_KEY);
+    if(!nome) return false;
+    const u = usuarios.find(x => x.nome === nome);
+    if(!u) return false;
+    usuarioLogado = u;
+    masterAutenticado = !!u.podeMaster;
+    return true;
+  }catch(e){
+    return false;
+  }
 }
 
 async function cadastrarOuAtualizarUsuario(){
@@ -1501,6 +1531,7 @@ function tentarLogin(){
   errorEl.style.display = 'none';
   usuarioLogado = u;
   masterAutenticado = !!u.podeMaster;
+  salvarUsuarioLogadoLocal(u.nome);
   mostrarTelaMenu();
 }
 document.getElementById('btn-login-entrar').addEventListener('click', tentarLogin);
@@ -1577,6 +1608,7 @@ async function executarAcaoMenu(acao){
 document.getElementById('btn-sair-menu').addEventListener('click', async () => {
   usuarioLogado = null;
   masterAutenticado = false;
+  await salvarUsuarioLogadoLocal('');
   await setSeparadorAtivo('');
   mostrarTelaConfig();
 });
@@ -1850,8 +1882,22 @@ function iniciarSincronizacaoUsuarios(){
         await migrarUsuariosAntigos();
       }
       await garantirMastersPadrao();
+      await restaurarSessaoOuPedirLogin();
     }
   }, (erro) => console.error('Erro de sincronização (usuários)', erro));
+}
+
+// Decide a tela inicial ao abrir o app: se houver uma sessão salva no aparelho
+// e o usuário ainda existir, entra direto no menu dele; senão, pede login.
+async function restaurarSessaoOuPedirLogin(){
+  const restaurou = await restaurarUsuarioLogadoLocal();
+  if(restaurou){
+    await setSeparadorAtivo('');
+    mostrarTelaMenu();
+  } else {
+    await setSeparadorAtivo('');
+    mostrarTelaConfig();
+  }
 }
 
 // Migração automática (só roda uma vez, se a coleção "usuarios" ainda estiver
@@ -2862,16 +2908,18 @@ function gerarDashboard(){
       <h2>Ritmo do dia</h2>
       <div class="times-text">Média de <b>${pedidosPorHora}</b> pedido(s) por hora ativa${diasNoPeriodo > 1 ? ` · ${diasNoPeriodo} dias no período` : ''}</div>
       ${horasComDados.length ? `
-        <div class="dash-hora-grid">
-          ${faixaHoras.map(h => {
-            const qtd = porHora[h] || 0;
-            return `
-            <div class="dash-hora-col">
-              <span class="dash-hora-valor">${qtd || ''}</span>
-              <div class="dash-hora-barra" style="height:${qtd/maxHora*100}%;"></div>
-              <span class="dash-hora-label">${String(h).padStart(2,'0')}h</span>
-            </div>`;
-          }).join('')}
+        <div class="dash-hora-wrap">
+          <div class="dash-hora-grid">
+            ${faixaHoras.map(h => {
+              const qtd = porHora[h] || 0;
+              return `
+              <div class="dash-hora-col">
+                <span class="dash-hora-valor">${qtd || ''}</span>
+                <div class="dash-hora-barra" style="height:${qtd/maxHora*100}%;"></div>
+                <span class="dash-hora-label">${String(h).padStart(2,'0')}h</span>
+              </div>`;
+            }).join('')}
+          </div>
         </div>` : '<div class="empty-state">Sem dados de horário no período.</div>'}
     </div>`;
 
