@@ -3097,6 +3097,7 @@ function renderPendentesArea(){
   }
 
   el.innerHTML = renderPedidosAgrupados(lista, ticketAndamento);
+  ativarTogglesClientes(el);
 
   el.querySelectorAll('[data-toggle-itens]').forEach(btn=>{
     btn.addEventListener('click', () => {
@@ -3297,20 +3298,47 @@ document.getElementById('btn-trocar-nome').addEventListener('click', async () =>
   voltarAoMenuOuLogin();
 });
 
+const gruposClientesExpandidos = new Set();
+
+function ativarTogglesClientes(container){
+  if(!container) return;
+  container.querySelectorAll('[data-cliente-grupo]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const chave = btn.getAttribute('data-cliente-grupo');
+      const grupo = btn.closest('.cliente-grupo');
+      const conteudo = grupo && grupo.querySelector('.cliente-grupo-conteudo');
+      if(!grupo || !conteudo) return;
+      const abrir = !gruposClientesExpandidos.has(chave);
+      if(abrir) gruposClientesExpandidos.add(chave);
+      else gruposClientesExpandidos.delete(chave);
+      conteudo.classList.toggle('hidden', !abrir);
+      btn.setAttribute('aria-expanded', String(abrir));
+      const seta = btn.querySelector('.cliente-grupo-seta');
+      if(seta) seta.textContent = abrir ? '▼' : '▶';
+    });
+  });
+}
+
 function renderPedidosAgrupados(lista, ticketFn){
   const grupos = new Map();
   lista.forEach(p => {
     const chave = String(p.codCliente || p.cliente || 'sem-cliente').trim().toLowerCase();
-    if(!grupos.has(chave)) grupos.set(chave, {cliente: p.cliente || p.codCliente || 'Cliente não informado', pedidos: []});
+    if(!grupos.has(chave)) grupos.set(chave, {chave, cliente: p.cliente || p.codCliente || 'Cliente não informado', pedidos: []});
     grupos.get(chave).pedidos.push(p);
   });
-  return Array.from(grupos.values()).map(grupo => `
-    <section class="cliente-grupo" style="margin-bottom:18px;">
-      <div style="font-weight:800;color:#5b3150;margin:6px 0 10px;padding:8px 12px;border-left:4px solid #c72f78;background:#fff4f9;border-radius:6px;">
+  return Array.from(grupos.values()).map(grupo => {
+    const aberto = gruposClientesExpandidos.has(grupo.chave);
+    return `
+    <section class="cliente-grupo" style="margin-bottom:12px;">
+      <button type="button" class="cliente-grupo-toggle" data-cliente-grupo="${escapeHtml(grupo.chave)}" aria-expanded="${aberto}" style="width:100%;text-align:left;font-weight:800;color:#5b3150;padding:10px 12px;border:0;border-left:4px solid #c72f78;background:#fff4f9;border-radius:6px;cursor:pointer;font-size:15px;">
+        <span class="cliente-grupo-seta" style="display:inline-block;width:18px;">${aberto ? '▼' : '▶'}</span>
         Cliente: ${escapeHtml(String(grupo.cliente))} <span style="font-weight:500;color:#777;">(${grupo.pedidos.length} pedido(s))</span>
+      </button>
+      <div class="cliente-grupo-conteudo${aberto ? '' : ' hidden'}" style="padding-top:10px;">
+        ${grupo.pedidos.map(ticketFn).join('')}
       </div>
-      ${grupo.pedidos.map(ticketFn).join('')}
-    </section>`).join('');
+    </section>`;
+  }).join('');
 }
 
 function render(){
@@ -3327,8 +3355,8 @@ function render(){
 
   aplicarEstadoNovoPedido(andamento.length > 0);
 
-  elAnd.innerHTML = andamento.length ? renderPedidosAgrupados(andamento, ticketAndamento) : '<div class="empty-state">Nenhum pedido em andamento. Inicie um pedido acima.</div>';
-  elFin.innerHTML = finalizados.length ? renderPedidosAgrupados(finalizados, ticketFinalizado) : '<div class="empty-state">Nenhum pedido finalizado hoje ainda.</div>';
+  elAnd.innerHTML = andamento.length ? andamento.map(ticketAndamento).join('') : '<div class="empty-state">Nenhum pedido em andamento. Inicie um pedido acima.</div>';
+  elFin.innerHTML = finalizados.length ? finalizados.map(ticketFinalizado).join('') : '<div class="empty-state">Nenhum pedido finalizado hoje ainda.</div>';
 
   document.querySelectorAll('[data-finish]').forEach(btn=>{
     btn.addEventListener('click', () => finalizarPedido(btn.getAttribute('data-finish')));
