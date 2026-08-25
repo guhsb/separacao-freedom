@@ -3096,7 +3096,7 @@ function renderPendentesArea(){
     return;
   }
 
-  el.innerHTML = lista.map(ticketAndamento).join('');
+  el.innerHTML = renderPedidosAgrupados(lista, ticketAndamento);
 
   el.querySelectorAll('[data-toggle-itens]').forEach(btn=>{
     btn.addEventListener('click', () => {
