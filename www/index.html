@@ -5,8 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Painel de Separação — Grupo Freedom</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 @font-face{
   font-family:'Manrope'; font-style:normal; font-weight:400;
@@ -1152,23 +1151,99 @@ const db = {
   }
 };
 
-// ---------- Firebase (dados compartilhados entre celulares) ----------
-const firebaseConfig = {
-  apiKey: "AIzaSyC0qY136_pDU63xAFUUFaUvHNzQUN0tAaM",
-  authDomain: "separacao-freedom.firebaseapp.com",
-  projectId: "separacao-freedom",
-  storageBucket: "separacao-freedom.firebasestorage.app",
-  messagingSenderId: "520089046437",
-  appId: "1:520089046437:web:b282e77a72b0dc4bda6c4c"
-};
+// ---------- Supabase (banco novo, sem importação do Firebase) ----------
+const SUPABASE_URL = 'https://pdpuclwikqdxppsmnubs.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_hiI4s-wGrHkN4BGhVpe63g_4rRps0YE';
+let supabaseClient = null;
 let fdb = null;
 let firebaseOk = false;
+
+function criarDocSupabase(row){
+  const dados = row && row.dados && typeof row.dados === 'object' ? row.dados : {};
+  return { id: row && row.id != null ? String(row.id) : '', data: () => ({...dados}), ref: null };
+}
+
+function criarColecaoSupabase(nomeColecao){
+  const executar = async (metodo, id, dados, opcoes = {}) => {
+    if(!supabaseClient) throw new Error('Supabase ainda não foi inicializado');
+    let valor = dados && typeof dados === 'object' ? {...dados} : {};
+    if(opcoes.merge || metodo === 'update'){
+      const atual = await supabaseClient.from(nomeColecao).select('dados').eq('id', String(id)).maybeSingle();
+      if(atual.error) throw atual.error;
+      valor = {...(atual.data?.dados || {}), ...valor};
+    }
+    const resposta = await supabaseClient.from(nomeColecao).upsert({
+      id: String(id), dados: valor, atualizado_em: new Date().toISOString()
+    }, {onConflict: 'id'});
+    if(resposta.error) throw resposta.error;
+    return resposta;
+  };
+
+  const refDoc = (id) => {
+    const ref = {
+      id: String(id),
+      async get(){
+        const r = await supabaseClient.from(nomeColecao).select('id,dados').eq('id', String(id)).maybeSingle();
+        if(r.error) throw r.error;
+        const doc = criarDocSupabase(r.data || {id: String(id), dados: {}}); doc.ref = ref; return {exists: !!r.data, id: doc.id, data: doc.data, ref};
+      },
+      async set(dados, opcoes){ return executar('set', id, dados, opcoes || {}); },
+      async update(dados){ return executar('update', id, dados, {merge:true}); },
+      async delete(){ const r = await supabaseClient.from(nomeColecao).delete().eq('id', String(id)); if(r.error) throw r.error; return r; },
+      onSnapshot(callback, onError){
+        let canal;
+        const carregar = async () => { try { const snap = await ref.get(); callback(snap); } catch(e){ if(onError) onError(e); } };
+        carregar();
+        canal = supabaseClient.channel(`realtime-${nomeColecao}-${String(id)}`)
+          .on('postgres_changes', {event:'*', schema:'public', table:nomeColecao, filter:`id=eq.${String(id)}`}, carregar)
+          .subscribe();
+        return () => { if(canal) supabaseClient.removeChannel(canal); };
+      }
+    };
+    return ref;
+  };
+
+  return {
+    doc: refDoc,
+    async get(){
+      const r = await supabaseClient.from(nomeColecao).select('id,dados');
+      if(r.error) throw r.error;
+      const docs = (r.data || []).map(row => { const d = criarDocSupabase(row); d.ref = refDoc(row.id); return d; });
+      return {docs, forEach(fn){ docs.forEach(fn); }};
+    },
+    onSnapshot(callback, onError){
+      let canal;
+      const carregar = async () => { try { callback(await this.get()); } catch(e){ if(onError) onError(e); } };
+      carregar();
+      canal = supabaseClient.channel(`realtime-${nomeColecao}`)
+        .on('postgres_changes', {event:'*', schema:'public', table:nomeColecao}, carregar)
+        .subscribe();
+      return () => { if(canal) supabaseClient.removeChannel(canal); };
+    }
+  };
+}
+
+function criarBatchSupabase(){
+  const operacoes = [];
+  return {
+    set(ref, dados, opcoes){ operacoes.push(() => ref.set(dados, opcoes)); },
+    update(ref, dados){ operacoes.push(() => ref.update(dados)); },
+    delete(ref){ operacoes.push(() => ref.delete()); },
+    async commit(){ for(const operacao of operacoes) await operacao(); }
+  };
+}
+
 try{
-  firebase.initializeApp(firebaseConfig);
-  fdb = firebase.firestore();
+  if(!window.supabase || !window.supabase.createClient) throw new Error('Biblioteca do Supabase não carregada');
+  supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+  fdb = {collection: criarColecaoSupabase, batch: criarBatchSupabase, async runTransaction(callback){
+    const transacao = {get: ref => ref.get(), set: (ref, dados) => ref.set(dados), update: (ref, dados) => ref.update(dados)};
+    return callback(transacao);
+  }};
+  firebase = {firestore: {FieldValue: {serverTimestamp: () => new Date().toISOString()}, Timestamp: {fromDate: d => d instanceof Date ? d.toISOString() : d}}};
   firebaseOk = true;
 }catch(e){
-  console.error('Erro ao iniciar Firebase', e);
+  console.error('Erro ao iniciar Supabase', e);
   firebaseOk = false;
 }
 
