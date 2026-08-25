@@ -3571,25 +3571,22 @@ async function iniciarPedido(){
   }
   errorEl.style.display = 'none';
 
-  const ref = fdb.collection('pedidos').doc(numero);
   travarBotao(btn, 'Iniciando...');
   try{
-    await fdb.runTransaction(async (transaction) => {
-      const snap = await transaction.get(ref);
-      if(snap.exists){
-        throw new Error('JA_INICIADO');
-      }
-      const novo = {
-        id: numero,
-        numero, cliente, nome: separadorAtual, qtd, valor,
-        horaInicio: supabaseCompat.firestore.FieldValue.serverTimestamp(),
-        horaFim: null
-      };
-      transaction.set(ref, novo);
+    const novo = {
+      id: numero,
+      numero, cliente, nome: separadorAtual, qtd, valor,
+      horaInicio: supabaseCompat.firestore.FieldValue.serverTimestamp(),
+      horaFim: null
+    };
+    const resposta = await supabaseClient.rpc('reservar_pedido', {
+      p_id: numero,
+      p_dados: novo
     });
+    if(resposta.error) throw resposta.error;
   }catch(e){
     destravarBotao(btn);
-    if(e.message === 'JA_INICIADO'){
+    if(String(e.message || '').includes('JA_INICIADO')){
       errorEl.textContent = 'Esse número de pedido já está em andamento ou já foi separado (por outro celular).';
       errorEl.style.display = 'block';
     } else {
@@ -4056,37 +4053,22 @@ async function iniciarTodosPedidosCliente(){
   travarBotao(btn, 'Iniciando...');
 
   try{
-    await fdb.runTransaction(async (transaction) => {
-      const refs = paraIniciar.map(p => fdb.collection('pedidos').doc(p.numero));
-      const snaps = [];
-      for(const ref of refs){
-        snaps.push(await transaction.get(ref));
-      }
-
-      const jaIniciados = [];
-      snaps.forEach((snap, i) => {
-        if(snap.exists) jaIniciados.push(paraIniciar[i].numero);
-      });
-      if(jaIniciados.length > 0){
-        throw new Error('JA_INICIADO:' + jaIniciados.join(', '));
-      }
-
-      paraIniciar.forEach((p, i) => {
-        const novo = {
-          id: p.numero,
-          numero: p.numero,
-          cliente: p.codCliente,
-          nome: separadorAtual,
-          qtd: p.qtdeItens,
-          valor: p.valorTotal,
-          tipoPedido: p.tipoPedido || obterTipoPedido(p.codPortador),
-          itens: (p.itens || []).map(it => ({...it, confirmado: !!it.confirmado})),
-          horaInicio: supabaseCompat.firestore.FieldValue.serverTimestamp(),
-          horaFim: null
-        };
-        transaction.set(refs[i], novo);
-      });
+    const novosPedidos = paraIniciar.map(p => ({
+      id: p.numero,
+      numero: p.numero,
+      cliente: p.codCliente,
+      nome: separadorAtual,
+      qtd: p.qtdeItens,
+      valor: p.valorTotal,
+      tipoPedido: p.tipoPedido || obterTipoPedido(p.codPortador),
+      itens: (p.itens || []).map(it => ({...it, confirmado: !!it.confirmado})),
+      horaInicio: supabaseCompat.firestore.FieldValue.serverTimestamp(),
+      horaFim: null
+    }));
+    const resposta = await supabaseClient.rpc('reservar_pedidos_lote', {
+      p_pedidos: novosPedidos
     });
+    if(resposta.error) throw resposta.error;
   }catch(e){
     destravarBotao(btn);
     if(String(e.message || '').startsWith('JA_INICIADO:')){
