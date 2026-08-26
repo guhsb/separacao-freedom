@@ -1459,18 +1459,36 @@ function isNativeApp(){
   return !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform());
 }
 
+// Indica se o app está rodando a cópia embutida no APK (modo reserva, usado só
+// quando o site não responde) em vez da versão publicada online.
+function estaUsandoCopiaEmbutida(){
+  try{
+    // Ao carregar do site, a origem é https://...; a cópia embutida no APK roda
+    // a partir de um endereço local do próprio aparelho.
+    return isNativeApp() && !/^https?:\/\/(?!localhost)/.test(window.location.origin);
+  }catch(e){
+    return false;
+  }
+}
+
 function iniciarVerificacaoAtualizacao(){
-  // Mostra no rodapé qual versão está rodando neste aparelho. Ajuda a descobrir
-  // rapidamente quando um celular está com um APK antigo (o site atualiza a cada
-  // publicação, mas o APK só muda quando a pessoa instala a versão nova).
+  // Mostra no rodapé de onde o app está rodando. Como o APK agora carrega a
+  // versão publicada online, normalmente ele já está sempre atualizado — só
+  // aparece aviso se estiver rodando a cópia de reserva embutida.
   const rodape = document.getElementById('rodape-versao');
   if(rodape){
-    rodape.textContent = isNativeApp()
-      ? `App instalado — versão ${APP_BUILD}`
-      : 'Versão web (sempre atualizada)';
+    if(!isNativeApp()){
+      rodape.textContent = 'Versão web';
+    } else if(estaUsandoCopiaEmbutida()){
+      rodape.textContent = `Modo reserva (sem acesso ao site) — versão ${APP_BUILD}`;
+    } else {
+      rodape.textContent = 'App atualizado automaticamente';
+    }
   }
 
-  if(!supabaseOk || !isNativeApp()) return;
+  // O aviso de "baixar APK novo" só faz sentido para quem está preso na cópia
+  // embutida; quem carrega do site já recebe as atualizações sozinho.
+  if(!supabaseOk || !isNativeApp() || !estaUsandoCopiaEmbutida()) return;
   fdb.collection('config').doc('app').onSnapshot((doc) => {
     if(!doc.exists) return;
     const dados = doc.data() || {};
@@ -4747,13 +4765,17 @@ window.addEventListener('online', () => {
 });
 
 (async function init(){
-  // Mostra a versão no rodapé antes de qualquer coisa, para ficar visível mesmo
-  // se o app abrir sem conexão.
+  // Mostra a origem do app no rodapé antes de qualquer coisa, para ficar visível
+  // mesmo se abrir sem conexão.
   const rodape = document.getElementById('rodape-versao');
   if(rodape){
-    rodape.textContent = isNativeApp()
-      ? `App instalado — versão ${APP_BUILD}`
-      : 'Versão web (sempre atualizada)';
+    if(!isNativeApp()){
+      rodape.textContent = 'Versão web';
+    } else if(estaUsandoCopiaEmbutida()){
+      rodape.textContent = `Modo reserva (sem acesso ao site) — versão ${APP_BUILD}`;
+    } else {
+      rodape.textContent = 'App atualizado automaticamente';
+    }
   }
 
   if(!supabaseOk){

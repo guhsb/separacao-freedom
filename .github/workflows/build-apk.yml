@@ -28,25 +28,21 @@ jobs:
       - name: Install npm dependencies
         run: npm install
 
-      - name: Grava numero do build no app
-        run: sed -i "s/const APP_BUILD = 0;/const APP_BUILD = ${{ github.run_number }};/" www/index.html
-
-      - name: Publica versão disponível no Supabase
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      - name: Sincroniza copia da raiz (usada pelo GitHub Pages)
         run: |
-          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
-            echo "Secrets do Supabase ainda não configurados; pulando publicação da versão."
-            exit 0
+          git checkout -- www/index.html
+          if ! cmp -s www/index.html index.html; then
+            cp www/index.html index.html
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add index.html
+            git commit -m "Sincroniza index.html da raiz (GitHub Pages) [skip ci]"
+            git push
+            echo "index.html da raiz sincronizado e publicado."
+          else
+            echo "index.html da raiz ja estava atualizado."
           fi
-          VERSION="${{ github.run_number }}"
-          APK_URL="https://github.com/${{ github.repository }}/releases/latest/download/app-debug.apk"
-          curl --fail-with-body -sS -X POST "$SUPABASE_URL/rest/v1/rpc/publicar_versao_apk" \\
-            -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \\
-            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \\
-            -H "Content-Type: application/json" \\
-            -d "{\"p_versao\":$VERSION,\"p_url\":\"$APK_URL\"}"
+          sed -i "s/const APP_BUILD = 0;/const APP_BUILD = ${{ github.run_number }};/" www/index.html
 
       - name: Sync Capacitor
         run: npx cap sync android
@@ -73,3 +69,20 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Publica versão disponível no Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "Secrets do Supabase ainda não configurados; pulando publicação da versão."
+            exit 0
+          fi
+          VERSION="${{ github.run_number }}"
+          APK_URL="https://github.com/${{ github.repository }}/releases/latest/download/app-debug.apk"
+          curl --fail-with-body -sS -X POST "$SUPABASE_URL/rest/v1/rpc/publicar_versao_apk" \
+            -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"p_versao\": $VERSION, \"p_url\": \"$APK_URL\"}"
+          echo "Versao $VERSION publicada no Supabase."
