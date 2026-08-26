@@ -18,6 +18,15 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="theme-color" content="#E9468C">
 
+<!--
+  Compatibilidade com WebView antigo (coletores de dados com Android 7/8 vêm com
+  WebView travado numa versão da era do Chrome 51-60, sem suporte completo a
+  fetch/Promise modernos). Estes substitutos precisam carregar ANTES da
+  biblioteca do Supabase, que usa fetch internamente.
+-->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/core-js/3.36.1/minified.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/fetch/3.6.20/fetch.umd.js"></script>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
@@ -1375,6 +1384,19 @@ let reconectando = false;
 // Testa cada parte da conexão separadamente e mostra o resultado na tela.
 // Serve para descobrir exatamente onde a conexão falha num aparelho específico,
 // sem precisar de cabo ou ferramentas de desenvolvedor.
+// Detecta a versão do motor do WebView. Coletores de dados com Android 7/8
+// costumam vir com WebView travado numa versão antiga que o fabricante não
+// deixa atualizar — é a causa mais comum de o app falhar num aparelho enquanto
+// funciona em todos os outros.
+function versaoWebView(){
+  try{
+    const m = navigator.userAgent.match(/Chrome\/(\d+)/);
+    return m ? parseInt(m[1], 10) : null;
+  }catch(e){
+    return null;
+  }
+}
+
 async function rodarDiagnostico(){
   const el = document.getElementById('diagnostico-resultado');
   const btn = document.getElementById('btn-diagnostico');
@@ -1384,8 +1406,12 @@ async function rodarDiagnostico(){
 
   const escrever = () => { el.textContent = linhas.join('\n'); };
 
+  const vw = versaoWebView();
+  linhas.push('Motor do navegador: Chrome ' + (vw || 'desconhecido') + (vw && vw < 70 ? ' (ANTIGO)' : ''));
   linhas.push('Rede do aparelho: ' + (navigator.onLine === false ? 'SEM INTERNET' : 'ok'));
   linhas.push('Biblioteca Supabase: ' + (window.supabase && window.supabase.createClient ? 'carregada' : 'NAO CARREGADA'));
+  linhas.push('Suporte a fetch: ' + (typeof fetch === 'function' ? 'ok' : 'AUSENTE'));
+  linhas.push('Suporte a Promise: ' + (typeof Promise === 'function' ? 'ok' : 'AUSENTE'));
   linhas.push('Relogio do celular: ' + new Date().toLocaleString('pt-BR'));
   escrever();
 
@@ -1461,7 +1487,6 @@ async function tentarReconectar(){
     // 3) O banco responde?
     const teste = await supabaseClient.from('config').select('id').limit(1);
     if(teste.error) throw teste.error;
-
     esconderAvisoSemInternet();
     if(texto) texto.textContent = '⚠️ Sem conexão com o servidor. Os dados não estão sendo sincronizados com os outros celulares no momento.';
     anotar('');
@@ -1472,7 +1497,12 @@ async function tentarReconectar(){
     console.error('Falha ao reconectar', e);
     if(texto) texto.textContent = '⚠️ O servidor não respondeu.';
     const msg = (e && (e.message || e.error_description || e.hint)) ? String(e.message || e.error_description || e.hint) : 'erro desconhecido';
-    anotar('Detalhe: ' + msg);
+    const vw = versaoWebView();
+    if(vw && vw < 70){
+      anotar('Detalhe: ' + msg + '\n\nEste aparelho tem o navegador interno desatualizado (Chrome ' + vw + '), o que costuma impedir a conexão. Toque em "Diagnóstico" e mostre o resultado ao responsável pelo sistema.');
+    } else {
+      anotar('Detalhe: ' + msg);
+    }
   }finally{
     if(btn) destravarBotao(btn);
     reconectando = false;
