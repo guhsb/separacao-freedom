@@ -14,7 +14,10 @@ import android.provider.MediaStore;
 import android.util.Base64;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebView;
+import android.webkit.WebSettings;
 import android.widget.Toast;
+
+import androidx.browser.customtabs.CustomTabsIntent;
 
 import com.getcapacitor.BridgeActivity;
 
@@ -24,12 +27,68 @@ import java.io.OutputStream;
 
 public class MainActivity extends BridgeActivity {
 
+    /** Endereco do app publicado, usado quando o WebView do aparelho e antigo demais. */
+    private static final String URL_APP = "https://guhsb.github.io/separacao-freedom/";
+
+    /** Abaixo desta versao do motor Chrome, o WebView nao da conta do app. */
+    private static final int VERSAO_MINIMA_WEBVIEW = 70;
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
         WebView webView = getBridge().getWebView();
         webView.addJavascriptInterface(new AndroidDownloader(this), "AndroidDownloader");
         webView.addJavascriptInterface(new AndroidPrinter(this, webView), "AndroidPrinter");
+
+        // Coletores de dados com Android 7/8 vem com o WebView travado numa versao
+        // antiga que o fabricante nao deixa atualizar, e nela o app nao consegue
+        // se conectar ao servidor. Nesses aparelhos, abrimos o app pelo Chrome
+        // instalado (que atualiza normalmente) em vez do WebView do sistema.
+        if (webViewEhAntigo(webView)) {
+            abrirNoChrome();
+        }
+    }
+
+    /** Le a versao do motor do WebView a partir do user agent. */
+    private boolean webViewEhAntigo(WebView webView) {
+        try {
+            String ua = WebSettings.getDefaultUserAgent(this);
+            if (ua == null) return false;
+            int i = ua.indexOf("Chrome/");
+            if (i < 0) return true; // sem Chrome no user agent: WebView muito antigo
+            String resto = ua.substring(i + 7);
+            int ponto = resto.indexOf('.');
+            if (ponto < 0) return false;
+            int versao = Integer.parseInt(resto.substring(0, ponto));
+            return versao < VERSAO_MINIMA_WEBVIEW;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** Abre o app no Chrome do aparelho, mantendo a aparencia de aplicativo. */
+    private void abrirNoChrome() {
+        try {
+            CustomTabsIntent intent = new CustomTabsIntent.Builder()
+                    .setShowTitle(false)
+                    .setUrlBarHidingEnabled(true)
+                    .build();
+            intent.intent.setPackage("com.android.chrome");
+            intent.launchUrl(this, Uri.parse(URL_APP));
+            finish();
+        } catch (Exception e) {
+            // Sem Chrome instalado: tenta qualquer navegador disponivel.
+            try {
+                CustomTabsIntent intent = new CustomTabsIntent.Builder().build();
+                intent.launchUrl(this, Uri.parse(URL_APP));
+                finish();
+            } catch (Exception e2) {
+                Toast.makeText(this,
+                        "Este aparelho precisa do Chrome instalado para rodar o app.",
+                        Toast.LENGTH_LONG).show();
+            }
+        }
     }
 
     /**
