@@ -4,6 +4,20 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Painel de Separação — Grupo Freedom</title>
+
+<!-- Ícone do atalho na tela inicial. Sem isso o iPhone gera um ícone genérico
+     com a primeira letra do título. -->
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="manifest" href="manifest.json">
+
+<!-- Nome curto do atalho e barra de status combinando com o app -->
+<meta name="apple-mobile-web-app-title" content="Separação">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#E9468C">
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
@@ -514,6 +528,7 @@ input[type="file"]{
 
   <div id="aviso-offline" class="aviso-offline hidden">
     <span id="aviso-offline-texto">⚠️ Sem conexão com o servidor. Os dados não estão sendo sincronizados com os outros celulares no momento.</span>
+    <div id="aviso-offline-detalhe" style="margin-top:6px; font-weight:600; font-size:11.5px; opacity:.9;"></div>
     <button class="btn" id="btn-tentar-reconectar" style="margin-top:8px; width:auto; padding:7px 16px; font-size:12px;">Tentar de novo</button>
   </div>
 
@@ -1226,7 +1241,7 @@ function criarColecaoSupabase(nomeColecao){
     if(opcoes.merge || metodo === 'update'){
       const atual = await supabaseClient.from(nomeColecao).select('dados').eq('id', String(id)).maybeSingle();
       if(atual.error) throw atual.error;
-      valor = {...(atual.data?.dados || {}), ...valor};
+      valor = {...((atual.data && atual.data.dados) || {}), ...valor};
     }
     const resposta = await supabaseClient.from(nomeColecao).upsert({
       id: String(id), dados: valor, atualizado_em: agoraServidorISO()
@@ -1295,7 +1310,8 @@ function criarBatchSupabase(){
 // novo, inclusive por um endereço alternativo.
 const CDNS_SUPABASE = [
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
-  'https://unpkg.com/@supabase/supabase-js@2'
+  'https://unpkg.com/@supabase/supabase-js@2',
+  'https://cdnjs.cloudflare.com/ajax/libs/supabase-js/2.39.7/index.min.js'
 ];
 
 function carregarScript(url){
@@ -1359,30 +1375,46 @@ async function tentarReconectar(){
   reconectando = true;
   const btn = document.getElementById('btn-tentar-reconectar');
   const texto = document.getElementById('aviso-offline-texto');
+  const detalhe = document.getElementById('aviso-offline-detalhe');
   if(btn) travarBotao(btn, 'Reconectando...');
+  if(detalhe) detalhe.textContent = '';
+
+  const anotar = (msg) => { if(detalhe) detalhe.textContent = msg; };
 
   try{
+    // 1) O aparelho tem rede?
+    if(navigator.onLine === false){
+      if(texto) texto.textContent = '⚠️ Este celular está sem internet.';
+      anotar('Conecte no wi-fi ou nos dados móveis e toque em "Tentar de novo".');
+      return;
+    }
+
+    // 2) A biblioteca do Supabase carregou?
     if(!supabaseOk){
       const temBiblioteca = await garantirBibliotecaSupabase();
       if(!temBiblioteca){
-        if(texto) texto.textContent = '⚠️ Não foi possível carregar o app. Verifique a internet e tente de novo.';
+        if(texto) texto.textContent = '⚠️ Não foi possível carregar os componentes do app.';
+        anotar('A internet do celular pode estar bloqueando cdn.jsdelivr.net e unpkg.com. Se estiver numa rede wi-fi da empresa, teste usando os dados móveis.');
         return;
       }
       montarClienteSupabase();
     }
 
-    // Confirma que o banco responde de verdade antes de dar como conectado.
+    // 3) O banco responde?
     const teste = await supabaseClient.from('config').select('id').limit(1);
     if(teste.error) throw teste.error;
 
     esconderAvisoSemInternet();
     if(texto) texto.textContent = '⚠️ Sem conexão com o servidor. Os dados não estão sendo sincronizados com os outros celulares no momento.';
+    anotar('');
     mostrarToast('Conectado novamente.', 'ok');
 
     if(!sincronizacoesIniciadas) await iniciarTudo();
   }catch(e){
     console.error('Falha ao reconectar', e);
-    if(texto) texto.textContent = '⚠️ Ainda sem conexão com o servidor. Verifique a internet e tente de novo.';
+    if(texto) texto.textContent = '⚠️ O servidor não respondeu.';
+    const msg = (e && (e.message || e.error_description || e.hint)) ? String(e.message || e.error_description || e.hint) : 'erro desconhecido';
+    anotar('Detalhe: ' + msg);
   }finally{
     if(btn) destravarBotao(btn);
     reconectando = false;
@@ -1540,7 +1572,7 @@ function fmtValor(v){
   return n.toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
 }
 function escapeHtml(str){
-  return String(str ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  return String(str === undefined || str === null ? '' : str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
 let separadoresCarregados = false;
@@ -2720,7 +2752,7 @@ function renderListaPedidosBloqueadosRevisao(){
             ${renderBadgeTipoPedido(p)}
           </div>
           <div class="ticket-meta">
-            <div><span class="m-label">Itens</span><span class="m-val">${escapeHtml(String(p.qtdeItens ?? '—'))}</span></div>
+            <div><span class="m-label">Itens</span><span class="m-val">${escapeHtml(String(p.qtdeItens === undefined || p.qtdeItens === null ? '—' : p.qtdeItens))}</span></div>
             <div><span class="m-label">Valor</span><span class="m-val amount">R$ ${fmtValor(p.valorTotal)}</span></div>
           </div>
           <div class="times-text" style="margin-top:8px; color:var(--pink-deep); font-weight:700;">⚠ ${escapeHtml(motivo || 'Bloqueado')}</div>
@@ -3673,7 +3705,7 @@ function renderBlocoItens(p, interativo){
     const atributoClique = interativo ? ` data-item-toggle="${p.id}|${idx}"` : '';
     return `
     <div class="${classes}"${atributoClique}>
-      <span class="item-qtde">${escapeHtml(String(it.qtde ?? '—'))}x</span>
+      <span class="item-qtde">${escapeHtml(String(it.qtde === undefined || it.qtde === null ? '—' : it.qtde))}x</span>
       <span class="item-codigo">${escapeHtml(it.codProduto || '—')}</span>
       <span>${escapeHtml(it.produto || '—')}</span>
       ${confirmado ? '<span class="item-check-icon">✓ conferido</span>' : ''}
@@ -3719,7 +3751,7 @@ function ticketAndamento(p){
     </div>
     <div class="ticket-meta">
       <div><span class="m-label">Separador</span><span class="m-val">${escapeHtml(p.nome)}</span></div>
-      <div><span class="m-label">Itens</span><span class="m-val">${escapeHtml(String(p.qtd ?? '—'))}</span></div>
+      <div><span class="m-label">Itens</span><span class="m-val">${escapeHtml(String(p.qtd === undefined || p.qtd === null ? '—' : p.qtd))}</span></div>
       <div><span class="m-label">Valor</span><span class="m-val amount">R$ ${fmtValor(p.valor)}</span></div>
       <div><span class="m-label">Data</span><span class="m-val">${fmtData(p.horaInicio)}</span></div>
     </div>
@@ -3748,7 +3780,7 @@ function ticketFinalizado(p){
     </div>
     <div class="ticket-meta">
       <div><span class="m-label">Separador</span><span class="m-val">${escapeHtml(p.nome)}</span></div>
-      <div><span class="m-label">Itens</span><span class="m-val">${escapeHtml(String(p.qtd ?? '—'))}</span></div>
+      <div><span class="m-label">Itens</span><span class="m-val">${escapeHtml(String(p.qtd === undefined || p.qtd === null ? '—' : p.qtd))}</span></div>
       <div><span class="m-label">Valor</span><span class="m-val amount">R$ ${fmtValor(p.valor)}</span></div>
       <div><span class="m-label">Data</span><span class="m-val">${fmtData(p.horaInicio)}</span></div>
     </div>
@@ -3925,7 +3957,7 @@ function abrirModalConfirmarItem(pedidoId, itemIndex, codigoBipado){
   const item = p.itens[itemIndex];
   itemConfirmandoContext = {pedidoId, itemIndex, codigoBipado: codigoBipado || null};
   document.getElementById('confirmar-item-codigo').textContent = item.codProduto || '—';
-  document.getElementById('confirmar-item-qtde').textContent = item.qtde ?? '—';
+  document.getElementById('confirmar-item-qtde').textContent = (item.qtde === undefined || item.qtde === null ? '—' : item.qtde);
   document.getElementById('confirmar-item-nome').textContent = item.produto || '—';
   document.getElementById('modal-confirmar-item-overlay').classList.remove('hidden');
   travarScrollFundo();
@@ -4025,8 +4057,8 @@ function abrirModalEditarPedido(id){
   pedidoEditandoId = id;
   document.getElementById('edit-numero').value = p.numero || '';
   document.getElementById('edit-cliente').value = p.cliente || '';
-  document.getElementById('edit-qtd').value = p.qtd ?? '';
-  document.getElementById('edit-valor').value = p.valor ?? '';
+  document.getElementById('edit-qtd').value = (p.qtd === undefined || p.qtd === null ? '' : p.qtd);
+  document.getElementById('edit-valor').value = (p.valor === undefined || p.valor === null ? '' : p.valor);
   document.getElementById('edit-data-inicio').value = paraInputDatetimeLocal(p.horaInicio);
   document.getElementById('edit-data-fim').value = p.horaFim ? paraInputDatetimeLocal(p.horaFim) : '';
   document.getElementById('modal-editar-erro').style.display = 'none';
@@ -4367,7 +4399,7 @@ function calcDuracaoMin(p){
   return (paraDate(p.horaFim) - paraDate(p.horaInicio)) / 60000;
 }
 function csvEscape(v){
-  const s = String(v ?? '');
+  const s = String(v === undefined || v === null ? '' : v);
   if(s.includes(';') || s.includes('"') || s.includes('\n')){
     return '"' + s.replace(/"/g,'""') + '"';
   }
@@ -4461,7 +4493,7 @@ function gerarRelatorio(){
           <span class="report-linha-cliente">Cliente ${escapeHtml(p.cliente || '—')}</span>
         </div>
         <div class="report-linha-dados">
-          <span><b>Itens:</b> ${escapeHtml(String(p.qtd ?? '—'))}</span>
+          <span><b>Itens:</b> ${escapeHtml(String(p.qtd === undefined || p.qtd === null ? '—' : p.qtd))}</span>
           <span><b>Valor:</b> R$ ${fmtValor(p.valor)}</span>
           <span><b>Início:</b> ${fmtData(p.horaInicio)} ${fmtHora(p.horaInicio)}</span>
           <span><b>Fim:</b> ${p.horaFim ? (fmtData(p.horaFim) + ' ' + fmtHora(p.horaFim)) : '<span class="pendente-tag">em andamento</span>'}</span>
@@ -4588,7 +4620,7 @@ function baixarExcel(){
       ...lista.map(p => {
         const dur = calcDuracaoMin(p);
         return [
-          fmtData(p.horaInicio), p.numero, p.cliente || '', p.qtd ?? '', Number((parseFloat(p.valor)||0).toFixed(2)),
+          fmtData(p.horaInicio), p.numero, p.cliente || '', (p.qtd === undefined || p.qtd === null ? '' : p.qtd), Number((parseFloat(p.valor)||0).toFixed(2)),
           fmtHora(p.horaInicio), p.horaFim ? fmtHora(p.horaFim) : 'em andamento',
           dur !== null ? Number(dur.toFixed(1)) : ''
         ];
@@ -4694,7 +4726,7 @@ function renderResultadoBusca(){
       </div>
       <div class="busca-separador-destaque">Separado por: ${escapeHtml(p.nome || '—')}</div>
       <div class="ticket-meta" style="margin-top:10px;">
-        <div><span class="m-label">Itens</span><span class="m-val">${escapeHtml(String(p.qtd ?? '—'))}</span></div>
+        <div><span class="m-label">Itens</span><span class="m-val">${escapeHtml(String(p.qtd === undefined || p.qtd === null ? '—' : p.qtd))}</span></div>
         <div><span class="m-label">Valor</span><span class="m-val amount">R$ ${fmtValor(p.valor)}</span></div>
         <div><span class="m-label">Data</span><span class="m-val">${fmtData(p.horaInicio)}</span></div>
         <div><span class="m-label">Duração</span><span class="m-val">${dur !== null ? fmtDuracao(dur*60000) : '—'}</span></div>

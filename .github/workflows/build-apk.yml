@@ -31,16 +31,18 @@ jobs:
       - name: Sincroniza copia da raiz (usada pelo GitHub Pages)
         run: |
           git checkout -- www/index.html
-          if ! cmp -s www/index.html index.html; then
-            cp www/index.html index.html
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add index.html
-            git commit -m "Sincroniza index.html da raiz (GitHub Pages) [skip ci]"
-            git push
-            echo "index.html da raiz sincronizado e publicado."
+          cp www/index.html index.html
+          cp www/manifest.json manifest.json
+          mkdir -p icons && cp -r www/icons/. icons/
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add index.html manifest.json icons
+          if git diff --cached --quiet; then
+            echo "Arquivos da raiz ja estavam atualizados."
           else
-            echo "index.html da raiz ja estava atualizado."
+            git commit -m "Sincroniza arquivos da raiz (GitHub Pages) [skip ci]"
+            git push
+            echo "Arquivos da raiz sincronizados e publicados."
           fi
           sed -i "s/const APP_BUILD = 0;/const APP_BUILD = ${{ github.run_number }};/" www/index.html
 
