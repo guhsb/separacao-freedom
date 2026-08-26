@@ -3,9 +3,6 @@
   "appName": "Separacao Freedom",
   "webDir": "www",
   "server": {
-    "androidScheme": "https",
-    "url": "https://guhsb.github.io/separacao-freedom",
-    "cleartext": false,
-    "errorPath": "index.html"
+    "androidScheme": "https"
   }
 }
