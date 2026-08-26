@@ -1293,6 +1293,34 @@ function criarColecaoSupabase(nomeColecao){
       const docs = (r.data || []).map(row => { const d = criarDocSupabase(row); d.ref = refDoc(row.id); return d; });
       return {docs, forEach(fn){ docs.forEach(fn); }};
     },
+
+    // Busca só os registros que interessam, em vez da tabela inteira.
+    // Usado para não trazer todo o histórico a cada atualização — com ~600
+    // pedidos por semana, carregar tudo ficaria pesado em poucos meses.
+    //
+    //   filtros.abertos        -> pedidos ainda não finalizados
+    //   filtros.desde          -> data ISO (só pedidos iniciados a partir dela)
+    //   filtros.ate            -> data ISO (só pedidos iniciados até ela)
+    async getFiltrado(filtros){
+      const f = filtros || {};
+      let consulta = supabaseClient.from(nomeColecao).select('id,dados');
+
+      if(f.abertos){
+        // horaFim ausente ou nulo dentro do JSON
+        consulta = consulta.or('dados->>horaFim.is.null,dados->>horaFim.eq.');
+      }
+      if(f.desde){
+        consulta = consulta.gte('dados->>horaInicio', f.desde);
+      }
+      if(f.ate){
+        consulta = consulta.lte('dados->>horaInicio', f.ate);
+      }
+
+      const r = await consulta;
+      if(r.error) throw r.error;
+      const docs = (r.data || []).map(row => { const d = criarDocSupabase(row); d.ref = refDoc(row.id); return d; });
+      return {docs, forEach(fn){ docs.forEach(fn); }};
+    },
     onSnapshot(callback, onError){
       let canal;
       const carregar = async () => { try { callback(await this.get()); } catch(e){ if(onError) onError(e); } };
@@ -1843,8 +1871,27 @@ async function compactarPedidosAntigos(){
 function iniciarSincronizacaoPedidos(){
   if(!supabaseOk) return;
   const ref = fdb.collection('pedidos');
-  unsubscribePedidos = ref.onSnapshot((snapshot) => {
-    pedidos = snapshot.docs.map(doc => doc.data());
+
+  // Em tempo real, mantemos só o que a tela do dia a dia precisa: pedidos ainda
+  // abertos (em andamento e pendentes, de qualquer data) e os finalizados de
+  // hoje. O histórico antigo é carregado sob demanda, quando alguém abre
+  // Relatório, Dashboard, Análises ou Busca — assim o app não fica arrastando
+  // meses de pedidos a cada bipe de item.
+  const carregar = async () => {
+    const hojeISO = dataLocalISO(agoraServidorISO());
+    const inicioDeHoje = hojeISO + 'T00:00:00';
+
+    const [abertos, deHoje] = await Promise.all([
+      ref.getFiltrado({abertos: true}),
+      ref.getFiltrado({desde: inicioDeHoje})
+    ]);
+
+    // Junta os dois conjuntos sem repetir
+    const porId = {};
+    abertos.docs.forEach(d => { porId[d.id] = d.data(); });
+    deHoje.docs.forEach(d => { porId[d.id] = d.data(); });
+    pedidos = Object.keys(porId).map(k => porId[k]);
+
     esconderAvisoSemInternet();
     pedidosCarregados = true;
 
@@ -1852,22 +1899,49 @@ function iniciarSincronizacaoPedidos(){
       render();
       renderListaPedidosDisponiveis();
     }
-    if(!document.getElementById('busca-screen').classList.contains('hidden')){
-      renderResultadoBusca();
-    }
-    if(!document.getElementById('relatorio-screen').classList.contains('hidden')){
-      gerarRelatorio();
-    }
+    // A busca consulta o banco por conta própria; não refazemos aqui para não
+    // disparar uma consulta a cada mudança em qualquer pedido.
     if(!document.getElementById('pendentes-area-screen').classList.contains('hidden')){
       renderPendentesArea();
     }
     atualizarAvisoPendentes();
     ultimaSincronizacaoTs = agoraServidorISO();
     atualizarPainelInicial();
-  }, (erro) => {
+  };
+
+  let canal;
+  carregar().catch(erro => {
     console.error('Erro de sincronização (pedidos)', erro);
     mostrarAvisoSemInternet();
   });
+  canal = supabaseClient.channel('realtime-pedidos')
+    .on('postgres_changes', {event:'*', schema:'public', table:'pedidos'}, carregar)
+    .subscribe(estado => monitorarCanal(estado, carregar, 'pedidos'));
+  unsubscribePedidos = () => { if(canal) supabaseClient.removeChannel(canal); };
+}
+
+// Carrega o histórico de um período específico, usado pelas telas de análise.
+// Mantém em memória apenas enquanto a tela está aberta.
+let pedidosHistorico = [];
+
+async function carregarHistoricoPeriodo(dataInicio, dataFim){
+  if(!supabaseOk) return [];
+  const ref = fdb.collection('pedidos');
+  const snap = await ref.getFiltrado({
+    desde: dataInicio + 'T00:00:00',
+    ate: dataFim + 'T23:59:59'
+  });
+  pedidosHistorico = snap.docs.map(d => d.data());
+  return pedidosHistorico;
+}
+
+// Junta o que está em tempo real com o histórico carregado, sem repetir.
+// As telas de análise usam isto no lugar de `pedidos`.
+function pedidosParaAnalise(){
+  const porId = {};
+  pedidosHistorico.forEach(p => { if(p && p.id) porId[p.id] = p; });
+  pedidos.forEach(p => { if(p && p.id) porId[p.id] = p; });
+  return Object.keys(porId).map(k => porId[k]);
 }
 
 function mostrarTelaConfig(){
@@ -3140,7 +3214,7 @@ document.querySelectorAll('[data-dash-atalho]').forEach(btn => {
   });
 });
 
-function gerarDashboard(){
+async function gerarDashboard(){
   const el = document.getElementById('dashboard-resultado');
   if(!el) return;
   const dataInicio = document.getElementById('in-dash-data-inicio').value;
@@ -3153,7 +3227,15 @@ function gerarDashboard(){
     ? fmtDataBR(inicioReal)
     : `${fmtDataBR(inicioReal)} até ${fmtDataBR(fimReal)}`;
 
-  const doPeriodo = pedidos.filter(p => {
+  el.innerHTML = '<div class="empty-state">Carregando...</div>';
+  try{
+    await carregarHistoricoPeriodo(inicioReal, fimReal);
+  }catch(e){
+    el.innerHTML = '<div class="empty-state">Não foi possível carregar o período. Verifique a conexão.</div>';
+    return;
+  }
+
+  const doPeriodo = pedidosParaAnalise().filter(p => {
     const d = dataLocalISO(p.horaInicio);
     return d >= inicioReal && d <= fimReal;
   });
@@ -3457,7 +3539,7 @@ document.getElementById('btn-gerar-ranking').addEventListener('click', gerarRank
 document.getElementById('in-ranking-data-inicio').addEventListener('change', gerarRanking);
 document.getElementById('in-ranking-data-fim').addEventListener('change', gerarRanking);
 
-function gerarRanking(){
+async function gerarRanking(){
   const el = document.getElementById('ranking-resultado');
   const dataInicio = document.getElementById('in-ranking-data-inicio').value;
   const dataFim = document.getElementById('in-ranking-data-fim').value;
@@ -3470,7 +3552,15 @@ function gerarRanking(){
   const inicioReal = dataInicio <= dataFim ? dataInicio : dataFim;
   const fimReal = dataInicio <= dataFim ? dataFim : dataInicio;
 
-  const doPeriodo = pedidos.filter(p => {
+  el.innerHTML = '<div class="empty-state">Carregando...</div>';
+  try{
+    await carregarHistoricoPeriodo(inicioReal, fimReal);
+  }catch(e){
+    el.innerHTML = '<div class="empty-state">Não foi possível carregar o período. Verifique a conexão.</div>';
+    return;
+  }
+
+  const doPeriodo = pedidosParaAnalise().filter(p => {
     const d = dataLocalISO(p.horaInicio);
     return d >= inicioReal && d <= fimReal;
   });
@@ -4515,7 +4605,7 @@ function voltarDoRelatorio(){
   voltarAoMenuOuLogin();
 }
 
-function gerarRelatorio(){
+async function gerarRelatorio(){
   const el = document.getElementById('relatorio-resultado');
   const btnExcel = document.getElementById('btn-baixar-excel');
   const btnPdf = document.getElementById('btn-baixar-pdf');
@@ -4534,7 +4624,15 @@ function gerarRelatorio(){
   const inicioReal = dataInicio <= dataFim ? dataInicio : dataFim;
   const fimReal = dataInicio <= dataFim ? dataFim : dataInicio;
 
-  const doPeriodo = pedidos.filter(p => {
+  el.innerHTML = '<div class="empty-state">Carregando...</div>';
+  try{
+    await carregarHistoricoPeriodo(inicioReal, fimReal);
+  }catch(e){
+    el.innerHTML = '<div class="empty-state">Não foi possível carregar o período. Verifique a conexão.</div>';
+    return;
+  }
+
+  const doPeriodo = pedidosParaAnalise().filter(p => {
     const d = dataLocalISO(p.horaInicio);
     return d >= inicioReal && d <= fimReal;
   });
@@ -4778,19 +4876,53 @@ function voltarDaBusca(){
   voltarAoMenuOuLogin();
 }
 
+let buscaTimer = null;
+let buscaResultados = [];
+
+// A busca consulta o banco direto, porque o número procurado pode ser de um
+// pedido antigo que não está carregado em memória (só mantemos os abertos e os
+// de hoje para o app não ficar pesado).
+async function buscarNoServidor(termo){
+  if(!supabaseOk) return [];
+  const r = await supabaseClient
+    .from('pedidos')
+    .select('id,dados')
+    .ilike('dados->>numero', '%' + termo + '%')
+    .limit(50);
+  if(r.error) throw r.error;
+  return (r.data || []).map(row => row.dados || {});
+}
+
 function renderResultadoBusca(){
   const termo = document.getElementById('in-busca').value.trim().toLowerCase();
   const el = document.getElementById('busca-resultado');
 
   if(!termo){
+    buscaResultados = [];
     el.innerHTML = '<div class="empty-state">Digite o número do pedido para buscar.</div>';
     return;
   }
 
-  const encontrados = pedidos.filter(p => {
-    const numero = String(p.numero || '').toLowerCase();
-    return numero.includes(termo);
-  }).sort((a,b) => paraDate(b.horaInicio) - paraDate(a.horaInicio));
+  // Espera a pessoa parar de digitar antes de consultar o banco
+  clearTimeout(buscaTimer);
+  el.innerHTML = '<div class="empty-state">Procurando...</div>';
+  buscaTimer = setTimeout(async () => {
+    try{
+      buscaResultados = await buscarNoServidor(termo);
+    }catch(e){
+      console.error('Erro na busca', e);
+      el.innerHTML = '<div class="empty-state">Não foi possível buscar. Verifique a conexão.</div>';
+      return;
+    }
+    mostrarResultadosBusca(termo);
+  }, 350);
+}
+
+function mostrarResultadosBusca(termo){
+  const el = document.getElementById('busca-resultado');
+  const encontrados = buscaResultados
+    .slice()
+    .sort((a,b) => paraDate(b.horaInicio) - paraDate(a.horaInicio));
 
   if(encontrados.length === 0){
     el.innerHTML = '<div class="empty-state">Nenhum pedido encontrado com esse número.</div>';
