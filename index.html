@@ -397,7 +397,8 @@ input[type="file"]{
 .dash-status-tag{
   font-size:10px; font-weight:800; text-transform:uppercase; padding:2px 8px; border-radius:999px; flex-shrink:0;
 }
-.dash-status-ativo{ background:rgba(233,70,140,.12); color:var(--pink-deep); }
+.dash-status-separando{ background:rgba(233,70,140,.12); color:var(--pink-deep); }
+.dash-status-ativo{ background:rgba(46,157,91,.14); color:var(--green-deep); }
 .dash-status-parado{ background:var(--rule-soft); color:var(--ink-soft); }
 .dash-hora-wrap{ width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch; }
 .dash-hora-grid{ display:flex; align-items:flex-end; gap:4px; height:120px; margin-top:10px; min-width:min-content; }
@@ -418,6 +419,43 @@ input[type="file"]{
   background:#fff3cd; color:#7a5b00; border:1px solid #f0d68a; border-radius:var(--radius);
   padding:10px 14px; font-size:12.5px; font-weight:600; margin-bottom:14px; text-align:center;
 }
+/* ---------- Tipos de pendência ---------- */
+.irmao-item{
+  display:flex; align-items:center; gap:10px; padding:9px 11px; margin-bottom:6px;
+  border:1px solid var(--rule-soft); border-radius:6px; font-size:13px; cursor:pointer;
+}
+.irmao-item input{ accent-color:var(--pink-deep); flex-shrink:0; width:17px; height:17px; }
+.irmao-item-info{ flex:1; min-width:0; }
+.irmao-item-sec{ display:block; font-size:11px; color:var(--ink-soft); }
+
+.badge.aguardando{ background:rgba(90,120,220,.14); color:#3a4fa0; }
+.motivo-aguardando-texto{
+  margin-top:8px; padding:8px 10px; background:rgba(90,120,220,.08);
+  border:1px solid rgba(90,120,220,.3); border-radius:5px; font-size:12.5px; color:#3a4fa0;
+}
+
+select{
+  width:100%; border:none; border-bottom:1.5px dotted var(--rule); background:transparent;
+  font-size:15px; font-weight:600; color:var(--ink); padding:5px 2px;
+  font-family:'Manrope',sans-serif; -webkit-appearance:none; appearance:none;
+}
+select:focus{ outline:none; border-bottom-color:var(--pink); border-bottom-style:solid; }
+
+/* ---------- Autocomplete ---------- */
+.auto-wrap{ position:relative; }
+.auto-lista{
+  position:absolute; left:0; right:0; top:100%; z-index:50;
+  background:#fff; border:1px solid var(--rule); border-radius:6px;
+  box-shadow:0 10px 24px rgba(0,0,0,.16); max-height:230px; overflow-y:auto; margin-top:2px;
+}
+.auto-item{
+  padding:10px 12px; font-size:13px; cursor:pointer; border-bottom:1px solid var(--rule-soft);
+}
+.auto-item:last-child{ border-bottom:none; }
+.auto-item:hover, .auto-item.ativo{ background:rgba(233,70,140,.10); }
+.auto-item-sec{ display:block; font-size:11px; color:var(--ink-soft); margin-top:2px; }
+.auto-vazio{ padding:10px 12px; font-size:12.5px; color:var(--ink-soft); }
+
 .rodape-versao{
   text-align:center; font-size:11px; color:var(--ink-soft); margin-top:6px; opacity:.75;
 }
@@ -542,6 +580,8 @@ input[type="file"]{
     <button class="btn" id="btn-diagnostico" style="margin-top:8px; margin-left:6px; width:auto; padding:7px 16px; font-size:12px;">Diagnóstico</button>
     <div id="diagnostico-resultado" style="margin-top:8px; font-size:11px; text-align:left; white-space:pre-wrap; font-family:monospace;"></div>
   </div>
+
+  <div id="aviso-itens-faltando" class="aviso-pendentes hidden"></div>
 
   <div id="aviso-desatualizado" class="aviso-desatualizado hidden">
     <span>⚠️ A atualização automática caiu — os dados podem estar desatualizados.</span>
@@ -668,6 +708,7 @@ input[type="file"]{
         <label><input type="checkbox" id="perm-pedidos-area"> Área de Pedidos</label>
         <label><input type="checkbox" id="perm-master"> Master (acesso total)</label>
       </div>
+
       <button class="btn primary" id="btn-cadastrar-usuario">Cadastrar / Atualizar</button>
       <div class="error" id="cadastro-usuario-error">Digite o nome e a senha antes de cadastrar.</div>
       <div id="lista-usuarios" style="margin-top:12px;"></div>
@@ -699,6 +740,12 @@ input[type="file"]{
     </div>
 
     <div id="aviso-pendentes-pedidos-area" class="aviso-pendentes hidden"></div>
+
+    <div class="section-title">Itens faltando (pedidos parados)</div>
+    <div class="panel">
+      <p class="risk-text">Pedidos que os separadores pararam por falta de item. Providencie o item e marque como resolvido.</p>
+      <div id="lista-avisos-itens"></div>
+    </div>
 
     <div class="panel">
       <h2>Importar CSV de pedidos</h2>
@@ -733,7 +780,7 @@ input[type="file"]{
       <div class="grid">
         <div class="field">
           <label>Nº do pedido</label>
-          <input id="in-bloquear-pedido" type="text" inputmode="numeric" placeholder="">
+          <div class="auto-wrap"><input id="in-bloquear-pedido" type="text" inputmode="numeric" placeholder="" autocomplete="off"><div class="auto-lista hidden" id="auto-in-bloquear-pedido"></div></div>
         </div>
       </div>
       <button class="btn primary" id="btn-bloquear-pedido">Bloquear pedido</button>
@@ -746,7 +793,7 @@ input[type="file"]{
       <div class="grid">
         <div class="field">
           <label>Nº do pedido</label>
-          <input id="in-priorizar-pedido" type="text" inputmode="numeric" placeholder="">
+          <div class="auto-wrap"><input id="in-priorizar-pedido" type="text" inputmode="numeric" placeholder="" autocomplete="off"><div class="auto-lista hidden" id="auto-in-priorizar-pedido"></div></div>
         </div>
       </div>
       <button class="btn primary" id="btn-priorizar-pedido">Marcar prioridade</button>
@@ -759,7 +806,7 @@ input[type="file"]{
       <div class="grid">
         <div class="field">
           <label>Nome da rede</label>
-          <input id="in-bloquear-rede" type="text" placeholder="">
+          <div class="auto-wrap"><input id="in-bloquear-rede" type="text" placeholder="" autocomplete="off"><div class="auto-lista hidden" id="auto-in-bloquear-rede"></div></div>
         </div>
       </div>
       <button class="btn primary" id="btn-bloquear-rede">Bloquear rede</button>
@@ -772,11 +819,31 @@ input[type="file"]{
       <div class="grid">
         <div class="field">
           <label>Nome da rede</label>
-          <input id="in-priorizar-rede" type="text" placeholder="">
+          <div class="auto-wrap"><input id="in-priorizar-rede" type="text" placeholder="" autocomplete="off"><div class="auto-lista hidden" id="auto-in-priorizar-rede"></div></div>
         </div>
       </div>
       <button class="btn primary" id="btn-priorizar-rede">Priorizar rede</button>
       <div id="lista-redes-prioridade" style="margin-top:12px;"></div>
+    </div>
+
+    <div class="section-title">Redes por separador</div>
+    <div class="panel">
+      <p class="risk-text">Reserva redes para um separador: os pedidos dessas redes aparecem <b>somente para ele</b>, e vêm no topo da lista dele. Ele continua vendo os demais pedidos normalmente, então não fica sem trabalho quando terminar os da rede.</p>
+      <div class="grid">
+        <div class="field">
+          <label>Separador</label>
+          <select id="sel-separador-redes"></select>
+        </div>
+        <div class="field">
+          <label>Rede</label>
+          <div class="auto-wrap">
+            <input id="in-usuario-redes" type="text" placeholder="Digite e escolha" autocomplete="off">
+            <div class="auto-lista hidden" id="auto-in-usuario-redes"></div>
+          </div>
+        </div>
+      </div>
+      <button class="btn primary" id="btn-add-rede-separador">Adicionar rede</button>
+      <div id="lista-redes-usuario" style="margin-top:12px;"></div>
     </div>
 
     <div class="section-title">Itens bloqueados</div>
@@ -785,7 +852,7 @@ input[type="file"]{
       <div class="grid">
         <div class="field">
           <label>Descrição do item</label>
-          <input id="in-bloquear-item" type="text" placeholder="">
+          <div class="auto-wrap"><input id="in-bloquear-item" type="text" placeholder="" autocomplete="off"><div class="auto-lista hidden" id="auto-in-bloquear-item"></div></div>
         </div>
       </div>
       <button class="btn primary" id="btn-bloquear-item">Adicionar à lista</button>
@@ -963,6 +1030,12 @@ input[type="file"]{
     <div class="section-title">Em andamento</div>
     <div id="lista-andamento"></div>
 
+    <div id="secao-aguardando" class="hidden">
+      <div class="section-title">Prontos, aguardando o cliente</div>
+      <p class="times-text" style="margin:-8px 0 10px 2px;">Já separados, só saem quando os outros pedidos do mesmo cliente ficarem prontos.</p>
+      <div id="lista-aguardando"></div>
+    </div>
+
     <div class="section-title">Finalizados</div>
     <div id="lista-finalizados"></div>
   </div>
@@ -1125,11 +1198,39 @@ input[type="file"]{
   <div id="modal-motivo-pendencia-overlay" class="modal-overlay hidden">
     <div class="modal-card">
       <h2>Deixar pedido pendente</h2>
-      <p class="modal-subtitulo">Digite o motivo (ex: aguardando produção de um item). Isso fica visível pra você e pra quem tem acesso à Área Master ou Área de Pedidos. Esse pedido não conta na sua média de tempo.</p>
+      <p class="modal-subtitulo">Pedidos pendentes não contam na sua média de tempo e ficam visíveis para a Área Master e a Área de Pedidos.</p>
+
       <div class="field full">
         <label>Motivo</label>
-        <input id="in-motivo-pendencia" type="text" placeholder="">
+        <input id="in-motivo-pendencia" type="text" placeholder="Ex: falta produzir um item">
       </div>
+
+      <div id="pendencia-itens-wrap" class="hidden">
+        <label class="m-label" style="margin-bottom:4px;">Quais itens não foram separados?</label>
+        <p class="modal-subtitulo" style="margin:0 0 8px 0;">Marque o que está faltando. Quem cuida dos pedidos recebe o aviso e o item aparece como gargalo no Dashboard.</p>
+        <div id="pendencia-itens-lista"></div>
+      </div>
+
+      <div class="field full" style="margin-top:10px;">
+        <label>Outro item faltando (opcional)</label>
+        <p class="modal-subtitulo" style="margin:0 0 6px 0;">Sugere os itens dos pedidos deste cliente. Use quando o que falta já foi bipado ou está em outro pedido do mesmo cliente.</p>
+        <div class="auto-wrap">
+          <input id="in-item-extra-pendencia" type="text" placeholder="Digite o código ou o nome" autocomplete="off">
+          <div class="auto-lista hidden" id="auto-in-item-extra-pendencia"></div>
+        </div>
+      </div>
+
+      <div id="pendencia-irmaos-wrap" class="hidden">
+        <label class="m-label" style="margin-bottom:4px;">Quais pedidos ficam parados?</label>
+        <p class="modal-subtitulo" style="margin:0 0 8px 0;">Este cliente tem mais pedidos em aberto. Marque os que também devem parar.</p>
+        <div style="margin-bottom:8px;">
+          <button type="button" class="link-trocar" id="pendencia-marcar-todos">marcar todos</button>
+          <span class="bar-sep">·</span>
+          <button type="button" class="link-trocar" id="pendencia-desmarcar-todos">desmarcar todos</button>
+        </div>
+        <div id="pendencia-irmaos-lista"></div>
+      </div>
+
       <div class="error" id="motivo-pendencia-erro">Digite o motivo antes de confirmar.</div>
       <div class="modal-botoes">
         <button class="btn" id="modal-motivo-pendencia-cancelar">Cancelar</button>
@@ -1752,6 +1853,7 @@ async function restaurarUsuarioLogadoLocal(){
     if(!u) return false;
     usuarioLogado = u;
     masterAutenticado = !!u.podeMaster;
+    iniciarPresenca();
     return true;
   }catch(e){
     return false;
@@ -1775,6 +1877,8 @@ async function cadastrarOuAtualizarUsuario(){
     podeBusca: document.getElementById('perm-busca').checked,
     podeAnalises: document.getElementById('perm-analises').checked,
     podeDashboard: document.getElementById('perm-dashboard').checked,
+    // As redes são geridas na Área de Pedidos; preserva o que já existe
+    redes: ((usuarios.find(x => x.nome === nome) || {}).redes) || [],
     podePedidosArea: document.getElementById('perm-pedidos-area').checked,
     podeMaster: document.getElementById('perm-master').checked
   };
@@ -1792,6 +1896,7 @@ async function cadastrarOuAtualizarUsuario(){
   ['perm-separar','perm-relatorio','perm-busca','perm-analises','perm-dashboard','perm-pedidos-area','perm-master'].forEach(id => {
     document.getElementById(id).checked = false;
   });
+
 }
 document.getElementById('btn-cadastrar-usuario').addEventListener('click', cadastrarOuAtualizarUsuario);
 
@@ -1805,6 +1910,7 @@ function carregarUsuarioParaEdicao(nome){
   document.getElementById('perm-busca').checked = !!u.podeBusca;
   document.getElementById('perm-analises').checked = !!u.podeAnalises;
   document.getElementById('perm-dashboard').checked = !!u.podeDashboard;
+
   document.getElementById('perm-pedidos-area').checked = !!u.podePedidosArea;
   document.getElementById('perm-master').checked = !!u.podeMaster;
 }
@@ -1824,6 +1930,7 @@ function renderListaUsuarios(){
         if(u.podeBusca) badges.push('Busca');
         if(u.podeAnalises) badges.push('Análises');
         if(u.podeDashboard) badges.push('Dashboard');
+        if(Array.isArray(u.redes) && u.redes.length) badges.push(u.redes.length + ' rede(s)');
         if(u.podePedidosArea) badges.push('Pedidos');
         if(u.podeMaster) badges.push('Master');
         return `
@@ -1965,6 +2072,53 @@ function mostrarTelaConfig(){
 /* =========================================================
    LOGIN ÚNICO E MENU POR PERMISSÕES
    ========================================================= */
+/* =========================================================
+   PRESENÇA — registra que a pessoa está com o app aberto, para o Dashboard
+   mostrar quem está ativo agora, e não só quem tem pedido em andamento.
+   ========================================================= */
+const MINUTOS_ATIVO = 2;
+let presencaTimer = null;
+
+async function registrarPresenca(){
+  if(!supabaseOk || !usuarioLogado) return;
+  try{
+    await fdb.collection('presenca').doc(usuarioLogado.nome).set({
+      nome: usuarioLogado.nome,
+      visto: agoraServidorISO()
+    });
+  }catch(e){
+    // Falha de presença não deve atrapalhar o uso do app
+  }
+}
+
+function iniciarPresenca(){
+  registrarPresenca();
+  clearInterval(presencaTimer);
+  // Atualiza a cada minuto para a janela de 2 minutos funcionar bem
+  presencaTimer = setInterval(registrarPresenca, 60 * 1000);
+}
+
+function pararPresenca(){
+  clearInterval(presencaTimer);
+  presencaTimer = null;
+}
+
+let presencas = [];
+function iniciarSincronizacaoPresenca(){
+  if(!supabaseOk) return;
+  fdb.collection('presenca').onSnapshot((snapshot) => {
+    presencas = snapshot.docs.map(doc => doc.data());
+  }, (erro) => console.error('Erro de sincronização (presença)', erro));
+}
+
+// Diz se a pessoa deu algum sinal de vida nos últimos MINUTOS_ATIVO minutos
+function estaAtivoAgora(nome){
+  const reg = presencas.find(x => String(x.nome || '') === String(nome || ''));
+  if(!reg || !reg.visto) return false;
+  const diffMin = (agoraServidor() - paraDate(reg.visto).getTime()) / 60000;
+  return diffMin <= MINUTOS_ATIVO;
+}
+
 function tentarLogin(){
   const nome = document.getElementById('in-login-usuario').value.trim();
   const senha = document.getElementById('in-login-senha').value;
@@ -1979,6 +2133,7 @@ function tentarLogin(){
   usuarioLogado = u;
   masterAutenticado = !!u.podeMaster;
   salvarUsuarioLogadoLocal(u.nome);
+  iniciarPresenca();
   mostrarTelaMenu();
 }
 document.getElementById('btn-login-entrar').addEventListener('click', tentarLogin);
@@ -2003,6 +2158,7 @@ function mostrarTelaMenu(){
   document.getElementById('menu-screen').classList.remove('hidden');
   document.getElementById('menu-nome-usuario').textContent = usuarioLogado.nome;
   renderMenuUsuario();
+  atualizarAvisoItensFaltando();
 }
 
 // Volta pro menu se ainda houver alguém logado; senão, volta pra tela de login.
@@ -2053,6 +2209,11 @@ async function executarAcaoMenu(acao){
 }
 
 document.getElementById('btn-sair-menu').addEventListener('click', async () => {
+  pararPresenca();
+  if(usuarioLogado){
+    // Marca saída para a pessoa não ficar "ativa" depois de sair
+    try{ await fdb.collection('presenca').doc(usuarioLogado.nome).set({nome: usuarioLogado.nome, visto: null}); }catch(e){}
+  }
   usuarioLogado = null;
   masterAutenticado = false;
   await salvarUsuarioLogadoLocal('');
@@ -2092,8 +2253,10 @@ function atualizarPainelInicial(){
   );
   elDisp.textContent = disponiveis.length;
 
+  // "Em andamento" conta só o que está sendo separado de fato; pedidos prontos
+  // aguardando os outros do cliente não entram aqui.
   document.getElementById('painel-andamento').textContent =
-    pedidos.filter(p => !p.horaFim && !p.pendente).length;
+    pedidos.filter(p => !p.horaFim && !p.pendente && !p.prontoAguardando).length;
 
   document.getElementById('painel-pendentes-count').textContent =
     pedidos.filter(p => p.pendente && !p.horaFim).length;
@@ -2323,6 +2486,9 @@ function iniciarSincronizacaoUsuarios(){
     if(!document.getElementById('master-screen').classList.contains('hidden')){
       renderListaUsuarios();
     }
+    if(!document.getElementById('pedidos-area-screen').classList.contains('hidden')){
+      preencherSelectSeparadores();
+    }
     if(!usuariosCarregados){
       usuariosCarregados = true;
       if(usuarios.length === 0){
@@ -2483,6 +2649,8 @@ function mostrarTelaPedidosArea(){
   renderListaItensBloqueados();
   renderListaPedidosBloqueadosRevisao();
   renderListaPedidosLiberados();
+  preencherSelectSeparadores();
+  renderAvisosItens();
   atualizarAvisoPendentes();
 }
 
@@ -2821,6 +2989,340 @@ async function priorizarPedido(){
 async function removerPrioridadePedido(numero){
   await fdb.collection('pedidos_catalogo').doc(numero).set({prioridade: false}, {merge: true});
 }
+/* =========================================================
+   AUTOCOMPLETE — sugere conforme digita, em vez de exigir
+   digitar o nome/código inteiro.
+   ========================================================= */
+function ligarAutocomplete(idCampo, buscarSugestoes){
+  const campo = document.getElementById(idCampo);
+  const lista = document.getElementById('auto-' + idCampo);
+  if(!campo || !lista) return;
+
+  let indiceAtivo = -1;
+  let itensAtuais = [];
+
+  const fechar = () => {
+    lista.classList.add('hidden');
+    lista.innerHTML = '';
+    indiceAtivo = -1;
+    itensAtuais = [];
+  };
+
+  const escolher = (item) => {
+    campo.value = item.valor;
+    fechar();
+    campo.focus();
+  };
+
+  const desenhar = (itens) => {
+    itensAtuais = itens;
+    indiceAtivo = -1;
+    if(itens.length === 0){
+      lista.innerHTML = '<div class="auto-vazio">Nada encontrado</div>';
+      lista.classList.remove('hidden');
+      return;
+    }
+    lista.innerHTML = itens.map((it, i) =>
+      `<div class="auto-item" data-indice="${i}">${escapeHtml(it.titulo)}` +
+      (it.detalhe ? `<span class="auto-item-sec">${escapeHtml(it.detalhe)}</span>` : '') +
+      `</div>`
+    ).join('');
+    lista.classList.remove('hidden');
+    lista.querySelectorAll('.auto-item').forEach(el => {
+      el.addEventListener('mousedown', (e) => {
+        e.preventDefault(); // evita perder o foco antes do clique
+        escolher(itens[parseInt(el.getAttribute('data-indice'), 10)]);
+      });
+    });
+  };
+
+  const destacar = () => {
+    lista.querySelectorAll('.auto-item').forEach((el, i) => {
+      el.classList.toggle('ativo', i === indiceAtivo);
+      if(i === indiceAtivo && el.scrollIntoView) el.scrollIntoView({block:'nearest'});
+    });
+  };
+
+  campo.addEventListener('input', () => {
+    const termo = campo.value.trim();
+    if(!termo){ fechar(); return; }
+    desenhar(buscarSugestoes(termo).slice(0, 15));
+  });
+
+  campo.addEventListener('keydown', (e) => {
+    if(lista.classList.contains('hidden')) return;
+    if(e.key === 'ArrowDown'){
+      e.preventDefault();
+      indiceAtivo = Math.min(indiceAtivo + 1, itensAtuais.length - 1);
+      destacar();
+    } else if(e.key === 'ArrowUp'){
+      e.preventDefault();
+      indiceAtivo = Math.max(indiceAtivo - 1, 0);
+      destacar();
+    } else if(e.key === 'Enter'){
+      if(indiceAtivo >= 0 && itensAtuais[indiceAtivo]){
+        e.preventDefault();
+        escolher(itensAtuais[indiceAtivo]);
+      }
+    } else if(e.key === 'Escape'){
+      fechar();
+    }
+  });
+
+  campo.addEventListener('blur', () => setTimeout(fechar, 120));
+}
+
+function normalizarBusca(s){
+  return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+// Redes existentes no catálogo importado
+function sugerirRedes(termo){
+  const t = normalizarBusca(termo);
+  const vistas = {};
+  pedidosCatalogo.forEach(p => {
+    const rede = (p.rede || '').trim();
+    if(!rede) return;
+    if(!vistas[rede]) vistas[rede] = 0;
+    vistas[rede]++;
+  });
+  return Object.keys(vistas)
+    .filter(rede => normalizarBusca(rede).includes(t))
+    .sort((a, b) => vistas[b] - vistas[a])
+    .map(rede => ({
+      valor: rede,
+      titulo: rede,
+      detalhe: `${vistas[rede]} pedido(s) no catálogo`
+    }));
+}
+
+// Produtos que aparecem nos pedidos do catálogo
+function sugerirItens(termo){
+  const t = normalizarBusca(termo);
+  const vistos = {};
+  pedidosCatalogo.forEach(p => {
+    (p.itens || []).forEach(it => {
+      const cod = (it.codProduto || '').trim();
+      if(!cod) return;
+      if(!vistos[cod]) vistos[cod] = {produto: it.produto || '', qtd: 0};
+      vistos[cod].qtd++;
+    });
+  });
+  return Object.keys(vistos)
+    .filter(cod => normalizarBusca(cod).includes(t) || normalizarBusca(vistos[cod].produto).includes(t))
+    .sort((a, b) => vistos[b].qtd - vistos[a].qtd)
+    .map(cod => ({
+      valor: cod,
+      titulo: cod,
+      detalhe: vistos[cod].produto
+    }));
+}
+
+// Pedidos disponíveis no catálogo
+function sugerirPedidos(termo){
+  const t = normalizarBusca(termo);
+  return pedidosCatalogo
+    .filter(p => {
+      const num = normalizarBusca(p.numero);
+      const cli = normalizarBusca(p.cliente || p.codCliente);
+      return num.includes(t) || cli.includes(t);
+    })
+    .sort((a, b) => String(b.numero).localeCompare(String(a.numero)))
+    .map(p => ({
+      valor: String(p.numero),
+      titulo: '#' + p.numero,
+      detalhe: (p.cliente || p.codCliente || '') + (p.rede ? ' · ' + p.rede : '')
+    }));
+}
+
+/* ---------- Redes por separador (Área de Pedidos) ---------- */
+
+// Preenche a lista de separadores para escolher de quem são as redes
+function preencherSelectSeparadores(){
+  const sel = document.getElementById('sel-separador-redes');
+  if(!sel) return;
+  const escolhidoAntes = sel.value;
+  const separadores = usuarios
+    .filter(u => u.podeSeparar)
+    .sort((a, b) => a.nome.localeCompare(b.nome));
+
+  sel.innerHTML = separadores.length
+    ? separadores.map(u => `<option value="${escapeHtml(u.nome)}">${escapeHtml(u.nome)}</option>`).join('')
+    : '<option value="">Nenhum separador cadastrado</option>';
+
+  if(escolhidoAntes && separadores.some(u => u.nome === escolhidoAntes)){
+    sel.value = escolhidoAntes;
+  }
+  renderRedesUsuario();
+}
+
+function renderRedesUsuario(){
+  const el = document.getElementById('lista-redes-usuario');
+  const sel = document.getElementById('sel-separador-redes');
+  if(!el || !sel) return;
+
+  const nome = sel.value;
+  const u = usuarios.find(x => x.nome === nome);
+  const redes = (u && Array.isArray(u.redes)) ? u.redes : [];
+
+  if(!u){
+    el.innerHTML = '<div class="empty-state">Escolha um separador.</div>';
+    return;
+  }
+  if(redes.length === 0){
+    el.innerHTML = `<div class="times-text">Nenhuma rede reservada para <b>${escapeHtml(nome)}</b> — ele pega pedidos de qualquer rede livre.</div>`;
+    return;
+  }
+  el.innerHTML = redes.map(rede => `
+    <div class="bloqueio-item">
+      <span>${escapeHtml(rede)}</span>
+      <button class="btn-remover" data-tirar-rede="${escapeHtml(rede)}" title="Tirar">&times;</button>
+    </div>`).join('');
+
+  el.querySelectorAll('[data-tirar-rede]').forEach(btn => {
+    btn.addEventListener('click', () => tirarRedeDoSeparador(nome, btn.getAttribute('data-tirar-rede')));
+  });
+}
+
+async function salvarRedesDoSeparador(nome, redes){
+  const u = usuarios.find(x => x.nome === nome);
+  if(!u) return;
+  try{
+    await fdb.collection('usuarios').doc(nome).set({...u, redes}, {merge: true});
+  }catch(e){
+    mostrarAvisoSemInternet();
+    mostrarToast('Não foi possível salvar. Verifique a conexão.', 'erro');
+  }
+}
+
+async function adicionarRedeAoSeparador(){
+  const sel = document.getElementById('sel-separador-redes');
+  const campo = document.getElementById('in-usuario-redes');
+  const nome = sel.value;
+  const rede = campo.value.trim();
+  if(!nome || !rede) return;
+
+  const u = usuarios.find(x => x.nome === nome);
+  if(!u) return;
+  const redes = Array.isArray(u.redes) ? u.redes.slice() : [];
+  if(redes.includes(rede)){
+    mostrarToast('Essa rede já está na lista.', 'erro');
+    return;
+  }
+  redes.push(rede);
+  await salvarRedesDoSeparador(nome, redes);
+  campo.value = '';
+  mostrarToast(`Rede adicionada para ${nome}.`, 'ok');
+}
+
+async function tirarRedeDoSeparador(nome, rede){
+  const u = usuarios.find(x => x.nome === nome);
+  if(!u) return;
+  const redes = (Array.isArray(u.redes) ? u.redes : []).filter(r => r !== rede);
+  await salvarRedesDoSeparador(nome, redes);
+}
+
+document.getElementById('btn-add-rede-separador').addEventListener('click', adicionarRedeAoSeparador);
+document.getElementById('sel-separador-redes').addEventListener('change', renderRedesUsuario);
+document.getElementById('in-usuario-redes').addEventListener('keydown', (e) => {
+  if(e.key === 'Enter'){ e.preventDefault(); adicionarRedeAoSeparador(); }
+});
+ligarAutocomplete('in-usuario-redes', sugerirRedes);
+
+// Diz se o usuário logado pode ver um pedido, conforme as redes dele.
+// Sem redes definidas (ou sendo master), vê tudo.
+// Descobre a rede de um pedido do catálogo
+function redeDoPedido(p){
+  return String(p.rede || getRedeDoCliente(p.codCliente) || '').trim();
+}
+
+// Quem é o dono de uma rede (o separador para quem ela foi reservada).
+// Retorna o nome, ou null se a rede não estiver reservada para ninguém.
+function donoDaRede(rede){
+  const alvo = String(rede || '').trim();
+  if(!alvo) return null;
+  const dono = usuarios.find(u =>
+    Array.isArray(u.redes) &&
+    u.redes.some(r => String(r).trim() === alvo)
+  );
+  return dono ? dono.nome : null;
+}
+
+// As redes funcionam como RESERVA, não como limite: os pedidos de uma rede
+// reservada só aparecem para o separador dono dela, mas esse separador continua
+// vendo todos os outros pedidos normalmente — os dele apenas vêm primeiro.
+function usuarioPodeVerPedido(p){
+  if(!usuarioLogado) return true;
+  const dono = donoDaRede(redeDoPedido(p));
+  if(!dono) return true;              // rede sem dono: todo mundo vê
+  return dono === usuarioLogado.nome; // reservada: só o dono vê
+}
+
+// Diz se o pedido é da rede reservada de quem está logado (usado para ordenar
+// esses pedidos no topo da lista).
+function pedidoEhDaMinhaRede(p){
+  if(!usuarioLogado) return false;
+  const redes = usuarioLogado.redes;
+  if(!Array.isArray(redes) || redes.length === 0) return false;
+  const rede = redeDoPedido(p);
+  return redes.some(r => String(r).trim() === rede);
+}
+
+ligarAutocomplete('in-bloquear-rede', sugerirRedes);
+ligarAutocomplete('in-priorizar-rede', sugerirRedes);
+ligarAutocomplete('in-bloquear-item', sugerirItens);
+// No modal de pendência, sugere apenas os itens que aparecem nos pedidos do
+// próprio cliente — sugerir o catálogo inteiro só atrapalharia, já que o que
+// falta necessariamente está em algum pedido dele.
+function sugerirItensDoCliente(termo){
+  const t = normalizarBusca(termo);
+  const p = pedidos.find(x => x.id === pedidoPendenciaContext);
+  if(!p) return [];
+
+  // Todos os pedidos do cliente ainda em aberto, incluindo o atual
+  const doCliente = pedidos.filter(x =>
+    !x.horaFim && String(x.cliente || '') === String(p.cliente || '')
+  );
+
+  const vistos = {};
+  doCliente.forEach(x => {
+    (x.itens || []).forEach(it => {
+      const chave = (it.codProduto || it.produto || '').trim();
+      if(!chave) return;
+      if(!vistos[chave]){
+        vistos[chave] = {
+          codProduto: it.codProduto || '',
+          produto: it.produto || '',
+          qtde: 0,
+          pedidos: []
+        };
+      }
+      vistos[chave].qtde += parseFloat(it.qtde) || 0;
+      const num = '#' + x.numero;
+      if(!vistos[chave].pedidos.includes(num)) vistos[chave].pedidos.push(num);
+    });
+  });
+
+  return Object.keys(vistos)
+    .filter(k => {
+      const v = vistos[k];
+      return normalizarBusca(v.codProduto).includes(t) || normalizarBusca(v.produto).includes(t);
+    })
+    .sort((a, b) => vistos[b].qtde - vistos[a].qtde)
+    .map(k => {
+      const v = vistos[k];
+      return {
+        valor: v.codProduto || v.produto,
+        titulo: (v.codProduto ? v.codProduto + ' — ' : '') + v.produto,
+        detalhe: `${Math.round(v.qtde)} un. · ${v.pedidos.join(', ')}`
+      };
+    });
+}
+
+ligarAutocomplete('in-item-extra-pendencia', sugerirItensDoCliente);
+ligarAutocomplete('in-bloquear-pedido', sugerirPedidos);
+ligarAutocomplete('in-priorizar-pedido', sugerirPedidos);
+
 document.getElementById('btn-bloquear-pedido').addEventListener('click', bloquearPedido);
 document.getElementById('btn-priorizar-pedido').addEventListener('click', priorizarPedido);
 
@@ -3276,10 +3778,74 @@ async function gerarDashboard(){
 
   const motivosPendencia = {};
   pendentesAgora.forEach(p => {
-    const m = p.motivoPendencia || 'Sem motivo informado';
-    motivosPendencia[m] = (motivosPendencia[m] || 0) + 1;
+    // Pedidos parados juntos recebem o mesmo motivo com o sufixo
+    // "(parado junto com #X)". Aqui tiramos esse sufixo para não dividir o
+    // mesmo problema em várias linhas com valores separados.
+    const m = String(p.motivoPendencia || 'Sem motivo informado')
+      .replace(/\s*\(parado junto com #[^)]*\)\s*$/i, '')
+      .trim() || 'Sem motivo informado';
+    if(!motivosPendencia[m]) motivosPendencia[m] = {qtd: 0, valor: 0, pedidos: []};
+    motivosPendencia[m].qtd++;
+    motivosPendencia[m].valor += parseFloat(p.valor) || 0;
+    motivosPendencia[m].pedidos.push('#' + p.numero);
   });
-  const motivosOrdenados = Object.keys(motivosPendencia).sort((a,b)=> motivosPendencia[b]-motivosPendencia[a]).slice(0,6);
+  const motivosOrdenados = Object.keys(motivosPendencia)
+    .sort((a,b)=> motivosPendencia[b].valor - motivosPendencia[a].valor)
+    .slice(0,6);
+
+  // Quanto cada bloqueio está segurando em valor. Agrupa os pedidos bloqueados
+  // pelo motivo raiz (rede, item ou bloqueio manual) para mostrar o custo real
+  // de cada decisão de bloqueio.
+  const valorBloqueado = bloqueadosAgora.reduce((s, p) => s + (parseFloat(p.valorTotal) || 0), 0);
+  const itensBloqueadosQtd = bloqueadosAgora.reduce((s, p) => s + (parseFloat(p.qtdeItens) || 0), 0);
+
+  const porMotivoBloqueio = {};
+  bloqueadosAgora.forEach(p => {
+    let chave;
+    // Quando o motivo é um item específico, contamos quantas unidades DAQUELE
+    // item estão presas — é o número que interessa para providenciar a reposição.
+    // Nos outros motivos, contamos o total de itens do pedido.
+    let unidades = parseFloat(p.qtdeItens) || 0;
+    let contaItemEspecifico = false;
+
+    if(redeDoPedidoEstaBloqueada(p)){
+      chave = 'Rede: ' + (p.rede || getRedeDoCliente(p.codCliente) || '—');
+    } else if(pedidoTemItemBloqueado(p)){
+      let desc = 'Item bloqueado';
+      let qtdeDoItem = 0;
+      (p.itens || []).forEach(item => {
+        const cod = String(item.codProduto || '').toLowerCase();
+        const prod = String(item.produto || '').toLowerCase();
+        const bateu = itensBloqueados.some(b => {
+          const t = String(b.descricao || '').toLowerCase().trim();
+          return t && (cod === t || prod.includes(t));
+        });
+        if(bateu){
+          if(desc === 'Item bloqueado'){
+            desc = 'Item: ' + (item.codProduto || '') + (item.produto ? ' — ' + item.produto : '');
+          }
+          qtdeDoItem += parseFloat(item.qtde) || 0;
+        }
+      });
+      chave = desc;
+      unidades = qtdeDoItem;
+      contaItemEspecifico = true;
+    } else if(p.bloqueado){
+      chave = 'Bloqueio manual';
+    } else {
+      chave = 'Cliente com outro pedido bloqueado';
+    }
+
+    if(!porMotivoBloqueio[chave]) porMotivoBloqueio[chave] = {pedidos: 0, valor: 0, itens: 0, itemEspecifico: contaItemEspecifico};
+    porMotivoBloqueio[chave].pedidos++;
+    porMotivoBloqueio[chave].valor += parseFloat(p.valorTotal) || 0;
+    porMotivoBloqueio[chave].itens += unidades;
+  });
+  const bloqueiosOrdenados = Object.keys(porMotivoBloqueio)
+    .sort((a, b) => porMotivoBloqueio[b].valor - porMotivoBloqueio[a].valor);
+
+  // Valor parado por pendência (pedidos já iniciados que travaram)
+  const valorPendente = pendentesAgora.reduce((s, p) => s + (parseFloat(p.valor) || 0), 0);
 
   const gargalosHtml = `
     <div class="panel">
@@ -3290,12 +3856,107 @@ async function gerarDashboard(){
         <div class="dash-kpi${pendentesAgora.length ? ' alerta' : ''}"><span class="dash-kpi-valor">${pendentesAgora.length}</span><span class="dash-kpi-label">Pendentes</span></div>
         <div class="dash-kpi${bloqueadosAgora.length ? ' alerta' : ''}"><span class="dash-kpi-valor">${bloqueadosAgora.length}</span><span class="dash-kpi-label">Bloqueados</span></div>
       </div>
-      ${motivosOrdenados.length ? `
-        <div class="times-text" style="margin-top:14px; font-weight:700;">Motivos das pendências:</div>
-        ${motivosOrdenados.map(m => `
+
+      ${(bloqueadosAgora.length || pendentesAgora.length) ? `
+        <div class="dash-kpis" style="margin-top:10px;">
+          <div class="dash-kpi${valorBloqueado ? ' alerta' : ''}">
+            <span class="dash-kpi-valor">R$ ${fmtValor(valorBloqueado)}</span>
+            <span class="dash-kpi-label">Parado por bloqueio</span>
+          </div>
+          <div class="dash-kpi${valorPendente ? ' alerta' : ''}">
+            <span class="dash-kpi-valor">R$ ${fmtValor(valorPendente)}</span>
+            <span class="dash-kpi-label">Parado por pendência</span>
+          </div>
+          <div class="dash-kpi">
+            <span class="dash-kpi-valor">${Math.round(itensBloqueadosQtd)}</span>
+            <span class="dash-kpi-label">Itens bloqueados</span>
+          </div>
+          <div class="dash-kpi${(valorBloqueado + valorPendente) ? ' alerta' : ''}">
+            <span class="dash-kpi-valor">R$ ${fmtValor(valorBloqueado + valorPendente)}</span>
+            <span class="dash-kpi-label">Total parado</span>
+          </div>
+        </div>` : ''}
+
+      ${bloqueiosOrdenados.length ? `
+        <div class="times-text" style="margin-top:14px; font-weight:700;">O que está bloqueando, e quanto segura:</div>
+        ${bloqueiosOrdenados.map(k => `
           <div class="dash-linha">
-            <span style="flex:1;">${escapeHtml(m)}</span>
-            <span class="dash-linha-valor">${motivosPendencia[m]}</span>
+            <span style="flex:1;">${escapeHtml(k)}
+              <span class="irmao-item-sec">${porMotivoBloqueio[k].pedidos} pedido(s) · ${porMotivoBloqueio[k].itemEspecifico ? 'faltam ' + Math.round(porMotivoBloqueio[k].itens) + ' un. deste item' : Math.round(porMotivoBloqueio[k].itens) + ' itens'}</span>
+            </span>
+            <span class="dash-linha-valor">R$ ${fmtValor(porMotivoBloqueio[k].valor)}</span>
+          </div>`).join('')}` : ''}
+      ${(() => {
+        // Uma seção só, por item: mostra o que está travando, quais clientes,
+        // quanto vale e quantos pedidos. Antes isso aparecia dividido em duas
+        // listas ("itens travando" e "motivos"), repetindo a mesma informação.
+        const abertos = avisosItens.filter(a => !a.resolvido);
+        const porItem = {};
+
+        abertos.forEach(a => {
+          (a.itens || []).forEach(it => {
+            const chave = (it.codProduto || it.produto || '—').trim();
+            if(!porItem[chave]){
+              porItem[chave] = {
+                titulo: (it.codProduto || '') + (it.produto ? (it.codProduto ? ' — ' : '') + it.produto : ''),
+                unidades: 0,
+                valor: 0,
+                clientes: {},
+                pedidos: new Set()
+              };
+            }
+            const g = porItem[chave];
+            g.unidades += parseFloat(it.qtde) || 0;
+
+            // Soma o valor de cada pedido só uma vez, mesmo que ele apareça
+            // com mais de um item faltando
+            if(!g.pedidos.has(a.numeroPedido)){
+              g.pedidos.add(a.numeroPedido);
+              const ped = pedidos.find(x => String(x.numero) === String(a.numeroPedido));
+              g.valor += ped ? (parseFloat(ped.valor) || 0) : 0;
+              const cli = a.cliente || '—';
+              if(!g.clientes[cli]) g.clientes[cli] = [];
+              g.clientes[cli].push('#' + a.numeroPedido);
+            }
+          });
+        });
+
+        const chaves = Object.keys(porItem).sort((x, y) => porItem[y].valor - porItem[x].valor);
+        if(chaves.length === 0) return '';
+
+        return `
+        <div class="times-text" style="margin-top:14px; font-weight:700;">Itens travando pedidos:</div>
+        ${chaves.map(k => {
+          const g = porItem[k];
+          const clientes = Object.keys(g.clientes)
+            .map(cli => `Cliente ${escapeHtml(cli)} (${g.clientes[cli].join(', ')})`)
+            .join(' · ');
+          return `
+          <div class="dash-linha">
+            <span style="flex:1;">${escapeHtml(g.titulo || k)}
+              <span class="irmao-item-sec">
+                ${g.pedidos.size} pedido(s)${g.unidades ? ' · faltam ' + Math.round(g.unidades) + ' un.' : ''}<br>${clientes}
+              </span>
+            </span>
+            <span class="dash-linha-valor">R$ ${fmtValor(g.valor)}</span>
+          </div>`;
+        }).join('')}`;
+      })()}
+
+      ${motivosOrdenados.length ? `
+        <div class="times-text" style="margin-top:14px; font-weight:700;">Outras pendências (sem item identificado):</div>
+        ${motivosOrdenados.filter(m => {
+          // Não repete motivos que já apareceram na lista de itens acima
+          const temAviso = avisosItens.some(a => !a.resolvido &&
+            String(a.motivo || '').trim() === String(m).trim() &&
+            (a.itens || []).length > 0);
+          return !temAviso;
+        }).map(m => `
+          <div class="dash-linha">
+            <span style="flex:1;">${escapeHtml(m)}
+              <span class="irmao-item-sec">${motivosPendencia[m].qtd} pedido(s) · ${escapeHtml(motivosPendencia[m].pedidos.slice(0,5).join(', '))}${motivosPendencia[m].pedidos.length > 5 ? '…' : ''}</span>
+            </span>
+            <span class="dash-linha-valor">R$ ${fmtValor(motivosPendencia[m].valor)}</span>
           </div>`).join('')}
       ` : ''}
     </div>`;
@@ -3306,6 +3967,13 @@ async function gerarDashboard(){
     const nome = p.nome || 'Sem separador';
     if(!porSeparador[nome]) porSeparador[nome] = [];
     porSeparador[nome].push(p);
+  });
+  // Inclui quem está com o app aberto agora mesmo sem pedidos no período —
+  // o líder precisa ver que a pessoa está disponível, não só quem produziu.
+  presencas.forEach(reg => {
+    if(reg && reg.nome && estaAtivoAgora(reg.nome) && !porSeparador[reg.nome]){
+      porSeparador[reg.nome] = [];
+    }
   });
   const statsSep = Object.keys(porSeparador).map(nome => {
     const lista = porSeparador[nome];
@@ -3329,7 +3997,17 @@ async function gerarDashboard(){
       ${statsSep.length ? statsSep.map(s => `
         <div class="dash-linha">
           <span class="dash-linha-nome">${escapeHtml(s.nome)}</span>
-          <span class="dash-status-tag ${s.emAndamento > 0 ? 'dash-status-ativo' : 'dash-status-parado'}">${s.emAndamento > 0 ? s.emAndamento + ' ativo' + (s.emAndamento > 1 ? 's' : '') : 'parado'}</span>
+          ${(() => {
+            // Três estados: separando (tem pedido aberto), ativo (app aberto
+            // nos últimos minutos) e parado.
+            if(s.emAndamento > 0){
+              return `<span class="dash-status-tag dash-status-separando">separando ${s.emAndamento}</span>`;
+            }
+            if(estaAtivoAgora(s.nome)){
+              return '<span class="dash-status-tag dash-status-ativo">ativo</span>';
+            }
+            return '<span class="dash-status-tag dash-status-parado">parado</span>';
+          })()}
           <span class="dash-linha-barra"><span class="dash-linha-fill" style="width:${(s.total/maxTotal*100)}%;"></span></span>
           <span class="dash-linha-valor">${s.total}</span>
         </div>
@@ -3576,6 +4254,13 @@ async function gerarRanking(){
     if(!porSeparador[nome]) porSeparador[nome] = [];
     porSeparador[nome].push(p);
   });
+  // Inclui quem está com o app aberto agora mesmo sem pedidos no período —
+  // o líder precisa ver que a pessoa está disponível, não só quem produziu.
+  presencas.forEach(reg => {
+    if(reg && reg.nome && estaAtivoAgora(reg.nome) && !porSeparador[reg.nome]){
+      porSeparador[reg.nome] = [];
+    }
+  });
 
   const stats = Object.keys(porSeparador).map(nome => {
     const lista = porSeparador[nome];
@@ -3718,17 +4403,32 @@ function render(){
   const ativoNorm = (separadorAtual || '').trim().toLowerCase();
   const meusPedidos = pedidos.filter(p => (p.nome || '').trim().toLowerCase() === ativoNorm);
   const hojeISO = dataLocalISO(agoraServidorISO());
-  const andamento = meusPedidos.filter(p => !p.horaFim && !p.pendente).sort((a,b)=> paraDate(b.horaInicio) - paraDate(a.horaInicio));
+  // Três grupos distintos:
+  //  - andamento: ainda sendo separado
+  //  - aguardando: já separado, só espera os outros pedidos do mesmo cliente
+  //  - finalizados: concluídos hoje
+  // "Aguardando" não é pendência: é trabalho pronto, por isso fica em seção
+  // própria logo abaixo de "Em andamento", e não na área de pendentes.
+  const andamento = meusPedidos
+    .filter(p => !p.horaFim && !p.pendente && !p.prontoAguardando)
+    .sort((a,b)=> paraDate(b.horaInicio) - paraDate(a.horaInicio));
+  const aguardando = meusPedidos
+    .filter(p => !p.horaFim && p.prontoAguardando)
+    .sort((a,b)=> paraDate(b.horaInicio) - paraDate(a.horaInicio));
   const finalizados = meusPedidos
     .filter(p => p.horaFim && dataLocalISO(p.horaFim) === hojeISO)
     .sort((a,b)=> paraDate(b.horaFim) - paraDate(a.horaFim));
 
   const elAnd = document.getElementById('lista-andamento');
+  const elAgu = document.getElementById('lista-aguardando');
+  const secAgu = document.getElementById('secao-aguardando');
   const elFin = document.getElementById('lista-finalizados');
 
-  aplicarEstadoNovoPedido(andamento.length > 0);
+  aplicarEstadoNovoPedido(andamento.length > 0 || aguardando.length > 0);
 
   elAnd.innerHTML = andamento.length ? andamento.map(ticketAndamento).join('') : '<div class="empty-state">Nenhum pedido em andamento. Inicie um pedido acima.</div>';
+  secAgu.classList.toggle('hidden', aguardando.length === 0);
+  elAgu.innerHTML = aguardando.map(ticketAguardando).join('');
   elFin.innerHTML = finalizados.length ? finalizados.map(ticketFinalizado).join('') : '<div class="empty-state">Nenhum pedido finalizado hoje ainda.</div>';
 
   document.querySelectorAll('[data-finish]').forEach(btn=>{
@@ -3789,6 +4489,17 @@ function render(){
   });
   document.querySelectorAll('[data-pendencia]').forEach(btn=>{
     btn.addEventListener('click', () => abrirModalMotivoPendencia(btn.getAttribute('data-pendencia')));
+  });
+  document.querySelectorAll('[data-voltar-separacao]').forEach(btn=>{
+    btn.addEventListener('click', async () => {
+      const id = btn.getAttribute('data-voltar-separacao');
+      try{
+        await fdb.collection('pedidos').doc(id).update({prontoAguardando: false});
+        mostrarToast('Pedido voltou para separação.', 'ok');
+      }catch(e){
+        mostrarAvisoSemInternet();
+      }
+    });
   });
   document.querySelectorAll('[data-retomar]').forEach(btn=>{
     btn.addEventListener('click', () => retomarPedido(btn.getAttribute('data-retomar')));
@@ -3942,7 +4653,46 @@ function ticketAndamento(p){
         <button class="btn ghost" data-editar="${p.id}">Editar</button>
         <button class="btn ghost" data-cancelar="${p.id}">Cancelar</button>
         ${botaoPendenciaOuRetomar}
-        <button class="btn confirm" data-finish="${p.id}">Finalizar pedido</button>
+        ${(!p.pendente || podeFinalizarPendente()) ? `<button class="btn confirm" data-finish="${p.id}">Finalizar pedido</button>` : ''}
+      </div>
+    </div>
+  </div>`;
+}
+
+// Cartão dos pedidos já separados que só aguardam os outros do mesmo cliente.
+// Mostra quais faltam, para a pessoa saber o que ainda precisa ser feito.
+function ticketAguardando(p){
+  const faltam = pedidos.filter(x =>
+    x.id !== p.id && !x.horaFim && !x.prontoAguardando &&
+    String(x.cliente || '') === String(p.cliente || '')
+  );
+  const listaFaltam = faltam.length
+    ? faltam.map(x => '#' + escapeHtml(x.numero)).join(', ')
+    : 'nenhum — pode finalizar';
+
+  return `
+  <div class="ticket">
+    <div class="ticket-top">
+      <div class="ticket-id">#${escapeHtml(p.numero)}<span>Cliente ${escapeHtml(p.cliente || '—')}</span></div>
+      <div class="badge aguardando">Pronto, aguardando</div>
+    </div>
+    <div class="ticket-meta">
+      <div><span class="m-label">Separador</span><span class="m-val">${escapeHtml(p.nome)}</span></div>
+      <div><span class="m-label">Itens</span><span class="m-val">${escapeHtml(String(p.qtd === undefined || p.qtd === null ? '—' : p.qtd))}</span></div>
+      <div><span class="m-label">Valor</span><span class="m-val amount">R$ ${fmtValor(p.valor)}</span></div>
+      <div><span class="m-label">Data</span><span class="m-val">${fmtData(p.horaInicio)}</span></div>
+    </div>
+    ${renderBadgeTipoPedido(p)}
+    <div class="motivo-aguardando-texto">
+      <b>Falta ficar pronto:</b> ${listaFaltam}
+    </div>
+    ${renderBlocoItens(p, false)}
+    <div class="ticket-times">
+      <div class="times-text">Início: <b>${fmtHora(p.horaInicio)}</b></div>
+      <div class="ticket-actions-group">
+        <button class="btn ghost" data-editar="${p.id}">Editar</button>
+        <button class="btn ghost" data-voltar-separacao="${p.id}">Voltar a separar</button>
+        ${faltam.length === 0 ? `<button class="btn confirm" data-finish="${p.id}">Finalizar pedido</button>` : ''}
       </div>
     </div>
   </div>`;
@@ -4045,30 +4795,407 @@ async function finalizarPedido(id){
       return;
     }
   }
+
+  // Pedidos do mesmo cliente saem juntos, então um só pode ser finalizado
+  // quando os outros também estiverem prontos. Se ainda houver algum aberto,
+  // este fica aguardando em vez de finalizar sozinho.
+  const irmaosAbertos = irmaosAbertosDoPedido(id);
+  if(irmaosAbertos.length > 0){
+    const numeros = irmaosAbertos.map(x => '#' + x.numero).join(', ');
+    const querAguardar = confirm(
+      `Este cliente ainda tem ${irmaosAbertos.length} pedido(s) em aberto: ${numeros}.\n\n` +
+      `Como saem juntos, este vai para "Prontos, aguardando o cliente" e será ` +
+      `finalizado automaticamente quando o último ficar pronto.\n\n` +
+      `Confirmar?`
+    );
+    if(!querAguardar) return;
+
+    try{
+      // Vai para a seção "Prontos, aguardando o cliente" — não é pendência,
+      // é trabalho concluído. Por isso não marca historicoPendencia (que
+      // tiraria o pedido da média de tempo do separador).
+      await fdb.collection('pedidos').doc(id).update({
+        prontoAguardando: true,
+        pendente: false
+      });
+      mostrarToast('Pedido pronto. Aguardando os outros do cliente.', 'ok');
+    }catch(e){
+      mostrarAvisoSemInternet();
+      mostrarToast('Não foi possível salvar. Verifique sua internet.', 'erro');
+    }
+    return;
+  }
+
   try{
-    await fdb.collection('pedidos').doc(id).update({horaFim: supabaseCompat.firestore.FieldValue.serverTimestamp()});
+    // Ao finalizar, limpa o estado de pendência: o pedido saiu, então não faz
+    // sentido continuar aparecendo como parado na lista de pendentes.
+    await fdb.collection('pedidos').doc(id).update({
+      horaFim: supabaseCompat.firestore.FieldValue.serverTimestamp(),
+      pendente: false,
+      grupoPendencia: null,
+      prontoAguardando: false
+    });
     mostrarToast('Pedido finalizado com sucesso.', 'ok');
+    // Este era o último em aberto: finaliza também os que estavam só esperando
+    await finalizarIrmaosProntos(id);
   }catch(e){
     mostrarAvisoSemInternet();
     mostrarToast('Não foi possível finalizar. Verifique sua internet.', 'erro');
   }
 }
 
+// Finaliza os pedidos do mesmo cliente que já estavam prontos e só aguardavam
+// os demais ficarem prontos também.
+async function finalizarIrmaosProntos(idFinalizado){
+  const p = pedidos.find(x => x.id === idFinalizado);
+  if(!p) return;
+  const aguardando = pedidos.filter(x =>
+    x.id !== idFinalizado &&
+    !x.horaFim &&
+    x.prontoAguardando &&
+    String(x.cliente || '') === String(p.cliente || '')
+  );
+  if(aguardando.length === 0) return;
+
+  // Só libera se não sobrou nenhum pedido do cliente realmente em aberto
+  const aindaAbertos = pedidos.filter(x =>
+    x.id !== idFinalizado &&
+    !x.horaFim &&
+    !x.prontoAguardando &&
+    String(x.cliente || '') === String(p.cliente || '')
+  );
+  if(aindaAbertos.length > 0) return;
+
+  try{
+    const lote = fdb.batch();
+    aguardando.forEach(x => {
+      lote.update(fdb.collection('pedidos').doc(x.id), {
+        horaFim: supabaseCompat.firestore.FieldValue.serverTimestamp(),
+        pendente: false,
+        prontoAguardando: false
+      });
+    });
+    await lote.commit();
+    mostrarToast(`Mais ${aguardando.length} pedido(s) do cliente finalizados junto.`, 'ok');
+  }catch(e){
+    console.error('Erro ao finalizar pedidos que aguardavam', e);
+  }
+}
+
 let pedidoPendenciaContext = null;
+
+// Encontra os outros pedidos do mesmo cliente que ainda estão abertos.
+// Usado para decidir quais ficam parados junto quando um pedido é pausado.
+// Pedidos do mesmo cliente que AINDA PRECISAM SER SEPARADOS.
+// Os que já estão prontos aguardando não entram: eles não impedem a
+// finalização, pelo contrário, estão esperando justamente por isto.
+// Um pedido parado normalmente precisa ser retomado antes de finalizar. Mas
+// quem cuida das pendências (Área de Pedidos ou Master) enxerga todas elas e
+// costuma resolver na hora — para essas pessoas o botão continua disponível.
+function podeFinalizarPendente(){
+  return !!(usuarioLogado && (usuarioLogado.podePedidosArea || usuarioLogado.podeMaster));
+}
+
+function irmaosAbertosDoPedido(id){
+  const p = pedidos.find(x => x.id === id);
+  if(!p) return [];
+  return pedidos.filter(x =>
+    x.id !== id &&
+    !x.horaFim &&
+    !x.prontoAguardando &&
+    String(x.cliente || '') === String(p.cliente || '')
+  );
+}
+
+// Todos os pedidos do cliente ainda não finalizados, inclusive os que já estão
+// prontos aguardando. Usado no modal de pendência, onde a pessoa precisa poder
+// parar qualquer um deles.
+function todosDoClienteEmAberto(id){
+  const p = pedidos.find(x => x.id === id);
+  if(!p) return [];
+  return pedidos.filter(x =>
+    x.id !== id &&
+    !x.horaFim &&
+    String(x.cliente || '') === String(p.cliente || '')
+  );
+}
+
+function renderIrmaosPendencia(irmaos, idPrincipal){
+  const el = document.getElementById('pendencia-irmaos-lista');
+  const principal = pedidos.find(x => x.id === idPrincipal);
+  const linha = (x, ehPrincipal) => {
+    const estado = ehPrincipal
+      ? 'este é o pedido que você está parando'
+      : (x.prontoAguardando ? 'pronto, aguardando' : 'em separação');
+    return `
+    <label class="irmao-item${ehPrincipal ? ' irmao-principal' : ''}">
+      <input type="checkbox" class="irmao-check" value="${escapeHtml(x.id)}"${ehPrincipal ? ' checked disabled' : ''}>
+      <span class="irmao-item-info">
+        #${escapeHtml(x.numero)}
+        <span class="irmao-item-sec">${escapeHtml(String(x.qtd === undefined || x.qtd === null ? '—' : x.qtd))} itens${x.tipoPedido ? ' · ' + escapeHtml(x.tipoPedido) : ''} · ${estado}</span>
+      </span>
+    </label>`;
+  };
+
+  const html = [];
+  if(principal) html.push(linha(principal, true));
+  irmaos.forEach(x => html.push(linha(x, false)));
+  el.innerHTML = html.join('');
+}
+
+// Lista os itens do pedido que ainda não foram conferidos — são os candidatos
+// naturais a "não separados". Vêm pré-marcados, mas dá para ajustar.
+/* =========================================================
+   AVISOS DE ITEM FALTANDO
+   Quando um separador para um pedido por falta de item, quem cuida da
+   Área de Pedidos precisa saber para providenciar. O aviso fica registrado
+   até alguém marcar como resolvido.
+   ========================================================= */
+let avisosItens = [];
+
+function iniciarSincronizacaoAvisos(){
+  if(!supabaseOk) return;
+  fdb.collection('avisos_itens').onSnapshot((snapshot) => {
+    avisosItens = snapshot.docs.map(doc => doc.data());
+    atualizarAvisoItensFaltando();
+    if(!document.getElementById('pedidos-area-screen').classList.contains('hidden')){
+      renderAvisosItens();
+    }
+  }, (erro) => console.error('Erro de sincronização (avisos)', erro));
+}
+
+async function registrarAvisoItensFaltando(pedidoId, numeroPedido, motivo, itens){
+  const p = pedidos.find(x => x.id === pedidoId) || {};
+  const id = 'aviso_' + numeroPedido + '_' + Date.now();
+  try{
+    await fdb.collection('avisos_itens').doc(id).set({
+      id,
+      pedidoId,
+      numeroPedido: String(numeroPedido),
+      cliente: p.cliente || '',
+      separador: p.nome || '',
+      motivo: motivo || '',
+      itens: itens,
+      criadoEm: agoraServidorISO(),
+      resolvido: false
+    });
+  }catch(e){
+    console.error('Não foi possível registrar o aviso de itens faltando', e);
+  }
+}
+
+// Bloqueia direto da tela de avisos: evita que a pessoa tenha que copiar o
+// código e ir até a seção de itens bloqueados.
+async function bloquearItemDoAviso(termo){
+  const alvo = String(termo || '').trim();
+  if(!alvo) return;
+
+  const jaExiste = itensBloqueados.some(b =>
+    String(b.descricao || '').toLowerCase().trim() === alvo.toLowerCase()
+  );
+  if(jaExiste){
+    mostrarToast('Esse item já está bloqueado.', 'erro');
+    return;
+  }
+
+  // Mostra o impacto antes de confirmar: quantos pedidos vão parar por causa disso
+  const afetados = pedidosCatalogo.filter(p =>
+    !p.conferido && !pedidoJaIniciado(p.numero) &&
+    (p.itens || []).some(it =>
+      String(it.codProduto || '').toLowerCase() === alvo.toLowerCase() ||
+      String(it.produto || '').toLowerCase().includes(alvo.toLowerCase())
+    )
+  );
+  const valorAfetado = afetados.reduce((s, p) => s + (parseFloat(p.valorTotal) || 0), 0);
+
+  const confirmar = confirm(
+    `Bloquear "${alvo}"?\n\n` +
+    `Isso vai segurar ${afetados.length} pedido(s) do catálogo` +
+    (valorAfetado ? `, somando R$ ${fmtValor(valorAfetado)}` : '') + `.\n\n` +
+    `Os pedidos ficam parados até você desbloquear ou liberar individualmente.`
+  );
+  if(!confirmar) return;
+
+  const id = 'item_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
+  try{
+    await fdb.collection('itens_bloqueados').doc(id).set({id, descricao: alvo});
+    mostrarToast(`Item "${alvo}" bloqueado.`, 'ok');
+  }catch(e){
+    mostrarAvisoSemInternet();
+    mostrarToast('Não foi possível bloquear. Verifique a conexão.', 'erro');
+  }
+}
+
+async function marcarAvisoResolvido(id){
+  try{
+    await fdb.collection('avisos_itens').doc(id).set({resolvido: true, resolvidoEm: agoraServidorISO()}, {merge: true});
+    mostrarToast('Aviso marcado como resolvido.', 'ok');
+  }catch(e){
+    mostrarAvisoSemInternet();
+  }
+}
+
+// Faixa de aviso para quem tem acesso à Área de Pedidos
+function atualizarAvisoItensFaltando(){
+  const el = document.getElementById('aviso-itens-faltando');
+  if(!el) return;
+  const podeVer = usuarioLogado && (usuarioLogado.podePedidosArea || usuarioLogado.podeMaster);
+  const abertos = avisosItens.filter(a => !a.resolvido);
+
+  if(!podeVer || abertos.length === 0){
+    el.classList.add('hidden');
+    return;
+  }
+  const totalItens = abertos.reduce((s, a) => s + ((a.itens || []).length), 0);
+  el.innerHTML = `⚠️ <b>${abertos.length} pedido(s)</b> parados por falta de item (${totalItens} item/itens). Veja em <b>Área de Pedidos</b>.`;
+  el.classList.remove('hidden');
+}
+
+function renderAvisosItens(){
+  const el = document.getElementById('lista-avisos-itens');
+  if(!el) return;
+  const abertos = avisosItens.filter(a => !a.resolvido);
+
+  if(abertos.length === 0){
+    el.innerHTML = '<div class="empty-state">Nenhum item faltando no momento.</div>';
+    return;
+  }
+
+  // Agrupa por item: o mesmo item costuma travar vários pedidos, e listar
+  // pedido a pedido deixaria a tela enorme e repetitiva. Assim vê-se logo qual
+  // item resolve mais pedidos de uma vez.
+  const porItem = {};
+  abertos.forEach(a => {
+    (a.itens || []).forEach(it => {
+      const chave = (it.codProduto || it.produto || '—').trim();
+      if(!porItem[chave]){
+        porItem[chave] = {
+          codProduto: it.codProduto || '',
+          produto: it.produto || '',
+          unidades: 0,
+          avisos: []
+        };
+      }
+      porItem[chave].unidades += parseFloat(it.qtde) || 0;
+      porItem[chave].avisos.push({aviso: a, qtde: it.qtde});
+    });
+  });
+
+  const chaves = Object.keys(porItem).sort((a, b) => porItem[b].avisos.length - porItem[a].avisos.length);
+
+  el.innerHTML = chaves.map(chave => {
+    const g = porItem[chave];
+    const grupoId = 'itemfalta_' + chave.replace(/[^a-zA-Z0-9]/g, '_');
+    const jaBloqueado = itensBloqueados.some(b =>
+      String(b.descricao || '').toLowerCase().trim() === String(chave).toLowerCase().trim()
+    );
+    const titulo = (g.codProduto ? g.codProduto : '') + (g.produto ? (g.codProduto ? ' — ' : '') + g.produto : '');
+
+    return `
+    <div class="bloqueio-grupo">
+      <button class="bloqueio-grupo-header" data-toggle-grupo="${grupoId}">
+        <span class="bloqueio-grupo-titulo">
+          <span class="bloqueio-grupo-chevron">▸</span>
+          ${escapeHtml(titulo || chave)}
+        </span>
+        <span class="bloqueio-grupo-count">${g.avisos.length} pedido${g.avisos.length > 1 ? 's' : ''}</span>
+      </button>
+      <div class="bloqueio-grupo-corpo hidden" id="grupo-${grupoId}">
+        <div class="times-text" style="margin-bottom:10px;">
+          ${g.unidades ? `Faltam <b>${Math.round(g.unidades)}</b> unidade(s) no total.` : ''}
+          ${jaBloqueado
+            ? ' <b style="color:var(--pink-deep);">Item já bloqueado.</b>'
+            : ` <button class="btn ghost" data-bloquear-item-aviso="${escapeHtml(chave)}">Bloquear este item</button>`}
+        </div>
+        ${g.avisos.map(({aviso, qtde}) => `
+          <div class="bloqueio-item" style="align-items:flex-start;">
+            <span class="irmao-item-info">
+              <b>#${escapeHtml(aviso.numeroPedido)}</b> — Cliente ${escapeHtml(aviso.cliente || '—')}
+              <span class="irmao-item-sec">
+                ${qtde ? Math.round(parseFloat(qtde)) + ' un. · ' : ''}parado por ${escapeHtml(aviso.separador || '—')}${aviso.criadoEm ? ' · ' + fmtData(aviso.criadoEm) + ' ' + fmtHora(aviso.criadoEm) : ''}
+                ${aviso.motivo ? '<br>Motivo: ' + escapeHtml(aviso.motivo) : ''}
+              </span>
+            </span>
+            <button class="link-trocar" data-resolver-aviso="${escapeHtml(aviso.id)}">resolvido</button>
+          </div>`).join('')}
+      </div>
+    </div>`;
+  }).join('');
+
+  el.querySelectorAll('[data-toggle-grupo]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-toggle-grupo');
+      const corpo = document.getElementById('grupo-' + id);
+      if(corpo) corpo.classList.toggle('hidden');
+      const chevron = btn.querySelector('.bloqueio-grupo-chevron');
+      if(chevron) chevron.classList.toggle('aberto');
+    });
+  });
+  el.querySelectorAll('[data-resolver-aviso]').forEach(btn => {
+    btn.addEventListener('click', () => marcarAvisoResolvido(btn.getAttribute('data-resolver-aviso')));
+  });
+  el.querySelectorAll('[data-bloquear-item-aviso]').forEach(btn => {
+    btn.addEventListener('click', () => bloquearItemDoAviso(btn.getAttribute('data-bloquear-item-aviso')));
+  });
+}
+
+function renderItensFaltantesPendencia(id){
+  const wrap = document.getElementById('pendencia-itens-wrap');
+  const el = document.getElementById('pendencia-itens-lista');
+  const p = pedidos.find(x => x.id === id);
+  const naoConferidos = (p && p.itens) ? p.itens.filter(it => !it.confirmado) : [];
+
+  if(naoConferidos.length === 0){
+    wrap.classList.add('hidden');
+    el.innerHTML = '';
+    return; // o campo "outro item" continua visível fora deste bloco
+  }
+  wrap.classList.remove('hidden');
+  el.innerHTML = naoConferidos.map((it, i) => `
+    <label class="irmao-item">
+      <input type="checkbox" class="item-falta-check" checked
+             data-cod="${escapeHtml(it.codProduto || '')}"
+             data-produto="${escapeHtml(it.produto || '')}"
+             data-qtde="${escapeHtml(String(it.qtde === undefined || it.qtde === null ? '' : it.qtde))}">
+      <span class="irmao-item-info">
+        ${escapeHtml(String(it.qtde === undefined || it.qtde === null ? '—' : it.qtde))}x ${escapeHtml(it.produto || it.codProduto || '—')}
+        <span class="irmao-item-sec">${escapeHtml(it.codProduto || '')}</span>
+      </span>
+    </label>`).join('');
+}
 
 function abrirModalMotivoPendencia(id){
   pedidoPendenciaContext = id;
   document.getElementById('in-motivo-pendencia').value = '';
   document.getElementById('motivo-pendencia-erro').style.display = 'none';
+  renderItensFaltantesPendencia(id);
+  document.getElementById('in-item-extra-pendencia').value = '';
+
+  // Mostra TODOS os pedidos do cliente ainda em aberto, incluindo o que está
+  // sendo parado (marcado e travado), para ficar claro o que vai acontecer.
+  const irmaos = todosDoClienteEmAberto(id);
+  const wrap = document.getElementById('pendencia-irmaos-wrap');
+  wrap.classList.remove('hidden');
+  renderIrmaosPendencia(irmaos, id);
+
   document.getElementById('modal-motivo-pendencia-overlay').classList.remove('hidden');
   travarScrollFundo();
   setTimeout(() => document.getElementById('in-motivo-pendencia').focus(), 50);
 }
+
+document.getElementById('pendencia-marcar-todos').addEventListener('click', () => {
+  document.querySelectorAll('.irmao-check').forEach(c => { c.checked = true; });
+});
+document.getElementById('pendencia-desmarcar-todos').addEventListener('click', () => {
+  document.querySelectorAll('.irmao-check:not(:disabled)').forEach(c => { c.checked = false; });
+});
+
 function fecharModalMotivoPendencia(){
   document.getElementById('modal-motivo-pendencia-overlay').classList.add('hidden');
   destravarScrollFundo();
   pedidoPendenciaContext = null;
 }
+
 async function confirmarMotivoPendencia(){
   const motivo = document.getElementById('in-motivo-pendencia').value.trim();
   const errorEl = document.getElementById('motivo-pendencia-erro');
@@ -4077,21 +5204,78 @@ async function confirmarMotivoPendencia(){
     return;
   }
   errorEl.style.display = 'none';
-  if(pedidoPendenciaContext){
-    try{
-      await fdb.collection('pedidos').doc(pedidoPendenciaContext).update({
+  if(!pedidoPendenciaContext){ fecharModalMotivoPendencia(); return; }
+
+  const idPrincipal = pedidoPendenciaContext;
+  const numPrincipal = (pedidos.find(x => x.id === idPrincipal) || {}).numero || idPrincipal;
+
+  // Além deste, também param os pedidos do cliente que foram marcados
+  // O pedido principal aparece marcado e travado na lista; ignoramos ele aqui
+  // para não gravar duas vezes.
+  const juntos = [];
+  document.querySelectorAll('.irmao-check:checked:not(:disabled)').forEach(chk => {
+    if(chk.value !== idPrincipal) juntos.push(chk.value);
+  });
+
+  // Itens que ficaram sem separar — viram aviso para a Área de Pedidos e
+  // aparecem como gargalo no Dashboard.
+  const itensFaltando = [];
+  document.querySelectorAll('.item-falta-check:checked').forEach(chk => {
+    itensFaltando.push({
+      codProduto: chk.getAttribute('data-cod') || '',
+      produto: chk.getAttribute('data-produto') || '',
+      qtde: chk.getAttribute('data-qtde') || ''
+    });
+  });
+
+  // Item digitado à mão (não estava na lista do pedido)
+  const itemExtra = document.getElementById('in-item-extra-pendencia').value.trim();
+  if(itemExtra){
+    itensFaltando.push({codProduto: '', produto: itemExtra, qtde: '', digitado: true});
+  }
+
+  // Marca o grupo que parou junto, para depois retomarem juntos também
+  const grupoPendencia = juntos.length > 0 ? ('grp_' + idPrincipal + '_' + Date.now()) : null;
+
+  try{
+    const lote = fdb.batch();
+    lote.update(fdb.collection('pedidos').doc(idPrincipal), {
+      pendente: true,
+      motivoPendencia: motivo,
+      itensFaltando: itensFaltando,
+      grupoPendencia: grupoPendencia,
+      prontoAguardando: false,
+      historicoPendencia: true
+    });
+    juntos.forEach(id => {
+      lote.update(fdb.collection('pedidos').doc(id), {
         pendente: true,
-        motivoPendencia: motivo,
+        motivoPendencia: `${motivo} (parado junto com #${numPrincipal})`,
+        grupoPendencia: grupoPendencia,
+        prontoAguardando: false,
         historicoPendencia: true
       });
-      mostrarToast('Pedido marcado como pendente.', 'ok');
-    }catch(e){
-      mostrarAvisoSemInternet();
-      mostrarToast('Não foi possível deixar pendente. Verifique sua internet.', 'erro');
+    });
+    await lote.commit();
+
+    if(itensFaltando.length > 0){
+      await registrarAvisoItensFaltando(idPrincipal, numPrincipal, motivo, itensFaltando);
     }
+
+    mostrarToast(
+      juntos.length
+        ? `Pedido e mais ${juntos.length} do mesmo cliente marcados como pendentes.`
+        : 'Pedido marcado como pendente.',
+      'ok'
+    );
+  }catch(e){
+    mostrarAvisoSemInternet();
+    mostrarToast('Não foi possível deixar pendente. Verifique sua internet.', 'erro');
   }
   fecharModalMotivoPendencia();
 }
+
+
 document.getElementById('modal-motivo-pendencia-cancelar').addEventListener('click', fecharModalMotivoPendencia);
 document.getElementById('modal-motivo-pendencia-confirmar').addEventListener('click', confirmarMotivoPendencia);
 document.getElementById('in-motivo-pendencia').addEventListener('keydown', (e) => {
@@ -4102,9 +5286,27 @@ document.getElementById('in-motivo-pendencia').addEventListener('keydown', (e) =
 });
 
 async function retomarPedido(id){
+  const p = pedidos.find(x => x.id === id);
+  // Pedidos que pararam juntos voltam juntos: mesma lógica de quando pararam.
+  const grupo = (p && p.grupoPendencia)
+    ? pedidos.filter(x => x.pendente && !x.horaFim && x.grupoPendencia === p.grupoPendencia)
+    : (p ? [p] : []);
+
   try{
-    await fdb.collection('pedidos').doc(id).update({pendente: false});
-    mostrarToast('Pedido retomado.', 'ok');
+    const lote = fdb.batch();
+    grupo.forEach(x => {
+      lote.update(fdb.collection('pedidos').doc(x.id), {
+        pendente: false,
+        grupoPendencia: null
+      });
+    });
+    await lote.commit();
+    mostrarToast(
+      grupo.length > 1
+        ? `${grupo.length} pedidos do cliente retomados juntos.`
+        : 'Pedido retomado.',
+      'ok'
+    );
   }catch(e){
     mostrarAvisoSemInternet();
     mostrarToast('Não foi possível retomar. Verifique sua internet.', 'erro');
@@ -4409,12 +5611,17 @@ function renderListaPedidosDisponiveis(){
     if(p.conferido) return false;
     if(pedidoEstaBloqueado(p)) return false;
     if(pedidoJaIniciado(p.numero)) return false;
+    if(!usuarioPodeVerPedido(p)) return false;
     if(!termo) return true;
     const numero = String(p.numero || '').toLowerCase();
     const codCliente = String(p.codCliente || '').toLowerCase();
     const cliente = String(p.cliente || '').toLowerCase();
     return numero.includes(termo) || codCliente.includes(termo) || cliente.includes(termo);
   }).sort((a, b) => {
+    // Ordem: minha rede primeiro, depois prioridade, depois número
+    const minhaA = pedidoEhDaMinhaRede(a) ? 1 : 0;
+    const minhaB = pedidoEhDaMinhaRede(b) ? 1 : 0;
+    if(minhaA !== minhaB) return minhaB - minhaA;
     const prioA = pedidoEhPrioridade(a) ? 1 : 0;
     const prioB = pedidoEhPrioridade(b) ? 1 : 0;
     if(prioA !== prioB) return prioB - prioA;
@@ -4437,7 +5644,7 @@ function renderListaPedidosDisponiveis(){
     const tipoBadge = `<span class="tipo-pedido-badge tipo-${tipo.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')}">${escapeHtml(tipo)}</span>`;
     return `
     <div class="bloqueio-item" data-selecionar-catalogo="${escapeHtml(p.numero)}" style="cursor:pointer;">
-      <span>${pedidoEhPrioridade(p) ? '⭐ ' : ''}#${escapeHtml(p.numero)} — ${escapeHtml(p.cliente || p.codCliente)} (${escapeHtml(String(p.qtdeItens))} itens) ${tipoBadge}${extra}</span>
+      <span>${pedidoEhDaMinhaRede(p) ? '<b style="color:var(--pink-deep);">[minha rede]</b> ' : ''}${pedidoEhPrioridade(p) ? '⭐ ' : ''}#${escapeHtml(p.numero)} — ${escapeHtml(p.cliente || p.codCliente)} (${escapeHtml(String(p.qtdeItens))} itens) ${tipoBadge}${extra}</span>
     </div>`;
   }).join('');
 
@@ -4453,7 +5660,8 @@ function selecionarPedidoCatalogo(numero){
   if(!p) return;
 
   pedidosClienteSelecionado = pedidosCatalogo.filter(x =>
-    x.codCliente === p.codCliente && !x.conferido && !pedidoEstaBloqueado(x) && !pedidoJaIniciado(x.numero)
+    x.codCliente === p.codCliente && !x.conferido && !pedidoEstaBloqueado(x) &&
+    !pedidoJaIniciado(x.numero) && usuarioPodeVerPedido(x)
   );
 
   document.getElementById('in-selecionar-pedido').value = '';
@@ -4650,6 +5858,13 @@ async function gerarRelatorio(){
     const nome = p.nome || 'Sem separador';
     if(!porSeparador[nome]) porSeparador[nome] = [];
     porSeparador[nome].push(p);
+  });
+  // Inclui quem está com o app aberto agora mesmo sem pedidos no período —
+  // o líder precisa ver que a pessoa está disponível, não só quem produziu.
+  presencas.forEach(reg => {
+    if(reg && reg.nome && estaAtivoAgora(reg.nome) && !porSeparador[reg.nome]){
+      porSeparador[reg.nome] = [];
+    }
   });
 
   const nomes = Object.keys(porSeparador).sort((a,b)=> a.localeCompare(b));
@@ -4934,10 +6149,14 @@ function mostrarResultadosBusca(termo){
     const dur = calcDuracaoMin(p);
     const statusBadge = p.pendente
       ? '<div class="badge pendente">Pendente</div>'
-      : `<div class="badge${finalizado ? ' done' : ' andamento'}">${finalizado ? 'Finalizado' : 'Em andamento'}</div>`;
+      : (p.prontoAguardando
+          ? '<div class="badge aguardando">Pronto, aguardando</div>'
+          : `<div class="badge${finalizado ? ' done' : ' andamento'}">${finalizado ? 'Finalizado' : 'Em andamento'}</div>`);
     const motivoHtml = p.pendente && p.motivoPendencia
       ? `<div class="motivo-pendencia-texto"><b>Motivo da pendência:</b> ${escapeHtml(p.motivoPendencia)}</div>`
-      : '';
+      : (p.prontoAguardando
+          ? '<div class="motivo-aguardando-texto">Separado, aguardando os outros pedidos do cliente.</div>'
+          : '');
     return `
     <div class="ticket${finalizado ? ' done' : ''}">
       <div class="ticket-top">
@@ -4981,6 +6200,8 @@ async function iniciarTudo(){
   iniciarSincronizacaoItensBloqueados();
   iniciarSincronizacaoClientesRede();
   iniciarSincronizacaoProdutosBarcode();
+  iniciarSincronizacaoAvisos();
+  iniciarSincronizacaoPresenca();
   iniciarVerificacaoAtualizacao();
 }
 
