@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Autoriza explicitamente os domínios que o app precisa acessar.
+
+  Sem isso, em alguns aparelhos o WebView do Android recusa conexões que o
+  Chrome do mesmo celular aceita normalmente — o app fica dizendo que o
+  servidor não respondeu mesmo com a internet funcionando.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <!-- Certificados do sistema -->
+            <certificates src="system" />
+            <!-- Certificados instalados pelo usuário/empresa (redes corporativas
+                 com proxy costumam usar isso; sem essa linha a conexão falha) -->
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">supabase.co</domain>
+        <domain includeSubdomains="true">supabase.in</domain>
+        <domain includeSubdomains="true">github.io</domain>
+        <domain includeSubdomains="true">jsdelivr.net</domain>
+        <domain includeSubdomains="true">unpkg.com</domain>
+        <domain includeSubdomains="true">cloudflare.com</domain>
+        <domain includeSubdomains="true">cdnjs.cloudflare.com</domain>
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </domain-config>
+</network-security-config>

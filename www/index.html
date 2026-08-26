@@ -530,6 +530,8 @@ input[type="file"]{
     <span id="aviso-offline-texto">⚠️ Sem conexão com o servidor. Os dados não estão sendo sincronizados com os outros celulares no momento.</span>
     <div id="aviso-offline-detalhe" style="margin-top:6px; font-weight:600; font-size:11.5px; opacity:.9;"></div>
     <button class="btn" id="btn-tentar-reconectar" style="margin-top:8px; width:auto; padding:7px 16px; font-size:12px;">Tentar de novo</button>
+    <button class="btn" id="btn-diagnostico" style="margin-top:8px; margin-left:6px; width:auto; padding:7px 16px; font-size:12px;">Diagnóstico</button>
+    <div id="diagnostico-resultado" style="margin-top:8px; font-size:11px; text-align:left; white-space:pre-wrap; font-family:monospace;"></div>
   </div>
 
   <div id="aviso-desatualizado" class="aviso-desatualizado hidden">
@@ -1369,6 +1371,62 @@ function esconderAvisoSemInternet(){
 // ou rede ainda não tinha subido) e a internet já voltou desde então.
 let sincronizacoesIniciadas = false;
 let reconectando = false;
+
+// Testa cada parte da conexão separadamente e mostra o resultado na tela.
+// Serve para descobrir exatamente onde a conexão falha num aparelho específico,
+// sem precisar de cabo ou ferramentas de desenvolvedor.
+async function rodarDiagnostico(){
+  const el = document.getElementById('diagnostico-resultado');
+  const btn = document.getElementById('btn-diagnostico');
+  if(!el) return;
+  travarBotao(btn, 'Testando...');
+  const linhas = [];
+
+  const escrever = () => { el.textContent = linhas.join('\n'); };
+
+  linhas.push('Rede do aparelho: ' + (navigator.onLine === false ? 'SEM INTERNET' : 'ok'));
+  linhas.push('Biblioteca Supabase: ' + (window.supabase && window.supabase.createClient ? 'carregada' : 'NAO CARREGADA'));
+  linhas.push('Relogio do celular: ' + new Date().toLocaleString('pt-BR'));
+  escrever();
+
+  const testar = async (nome, url, opcoes) => {
+    const inicio = Date.now();
+    try{
+      const resposta = await fetch(url, opcoes || {});
+      linhas.push(`${nome}: HTTP ${resposta.status} (${Date.now()-inicio}ms)`);
+    }catch(e){
+      linhas.push(`${nome}: FALHOU — ${e && e.message ? e.message : e}`);
+    }
+    escrever();
+  };
+
+  await testar('Internet geral', 'https://www.google.com/generate_204', {mode:'no-cors'});
+  await testar('Site do app', window.location.origin + window.location.pathname, {method:'HEAD', cache:'no-store'});
+  await testar('Supabase (raiz)', SUPABASE_URL + '/rest/v1/', {
+    headers: {apikey: SUPABASE_PUBLISHABLE_KEY}
+  });
+
+  // Consulta real, igual à que o app faz
+  try{
+    if(!supabaseClient && window.supabase && window.supabase.createClient) montarClienteSupabase();
+    if(supabaseClient){
+      const inicio = Date.now();
+      const r = await supabaseClient.from('config').select('id').limit(1);
+      if(r.error){
+        linhas.push(`Consulta ao banco: ERRO — ${r.error.message || JSON.stringify(r.error)}`);
+      } else {
+        linhas.push(`Consulta ao banco: ok (${Date.now()-inicio}ms)`);
+      }
+    } else {
+      linhas.push('Consulta ao banco: cliente nao pode ser criado');
+    }
+  }catch(e){
+    linhas.push('Consulta ao banco: FALHOU — ' + (e && e.message ? e.message : e));
+  }
+  escrever();
+
+  destravarBotao(btn);
+}
 
 async function tentarReconectar(){
   if(reconectando) return;
@@ -4765,6 +4823,7 @@ async function iniciarTudo(){
 }
 
 document.getElementById('btn-tentar-reconectar').addEventListener('click', tentarReconectar);
+document.getElementById('btn-diagnostico').addEventListener('click', rodarDiagnostico);
 
 document.getElementById('btn-recarregar-dados').addEventListener('click', async () => {
   const btn = document.getElementById('btn-recarregar-dados');
