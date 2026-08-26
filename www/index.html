@@ -395,6 +395,13 @@ input[type="file"]{
   background:#fff3cd; color:#7a5b00; border:1px solid #f0d68a; border-radius:var(--radius);
   padding:10px 14px; font-size:12.5px; font-weight:600; margin-bottom:14px; text-align:center;
 }
+.rodape-versao{
+  text-align:center; font-size:11px; color:var(--ink-soft); margin-top:6px; opacity:.75;
+}
+.aviso-desatualizado{
+  background:#fff3cd; color:#7a5b00; border:1px solid #f0d68a; border-radius:var(--radius);
+  padding:10px 14px; font-size:12.5px; font-weight:600; margin-bottom:14px; text-align:center;
+}
 .aviso-atualizacao{
   background:#e7f0ff; color:#1a4a8a; border:1px solid #a8c8f0; border-radius:var(--radius);
   padding:10px 14px; font-size:12.5px; font-weight:600; margin-bottom:14px; text-align:center;
@@ -506,11 +513,18 @@ input[type="file"]{
 <div class="wrap">
 
   <div id="aviso-offline" class="aviso-offline hidden">
-    ⚠️ Sem conexão com a internet. Os dados não estão sendo sincronizados com os outros celulares no momento.
+    <span id="aviso-offline-texto">⚠️ Sem conexão com o servidor. Os dados não estão sendo sincronizados com os outros celulares no momento.</span>
+    <button class="btn" id="btn-tentar-reconectar" style="margin-top:8px; width:auto; padding:7px 16px; font-size:12px;">Tentar de novo</button>
+  </div>
+
+  <div id="aviso-desatualizado" class="aviso-desatualizado hidden">
+    <span>⚠️ A atualização automática caiu — os dados podem estar desatualizados.</span>
+    <button class="btn" id="btn-recarregar-dados" style="margin-top:8px; width:auto; padding:7px 16px; font-size:12px;">Atualizar agora</button>
   </div>
 
   <div id="aviso-atualizacao" class="aviso-atualizacao hidden">
-    🔄 Uma nova versão do app está disponível.
+    🔄 <b>Nova versão disponível.</b> O app instalado neste celular está desatualizado —
+    instale a versão nova para receber as correções.<br>
     <a id="link-atualizacao-apk" href="https://github.com/guhsb/separacao-freedom/releases/latest/download/app-debug.apk" download="separacao-freedom.apk">Baixar APK direto</a>
   </div>
 
@@ -562,6 +576,8 @@ input[type="file"]{
       <button class="btn primary" id="btn-login-entrar" style="margin-top:14px;">Entrar</button>
       <div class="error" id="login-erro">Usuário ou senha incorretos.</div>
     </div>
+
+    <div class="rodape-versao" id="rodape-versao"></div>
   </div>
 
   <div id="menu-screen" class="hidden">
@@ -1152,6 +1168,45 @@ const db = {
 };
 
 // ---------- Supabase (banco novo, sem importação de dados antigos) ----------
+
+// Controle de saúde do tempo real. Se o WebSocket cair (rede oscilou, celular
+// dormiu, trocou de wi-fi), o canal morre silenciosamente e o app continuaria
+// mostrando dados velhos sem avisar ninguém — foi o que causou um pedido já
+// finalizado continuar aparecendo em um aparelho. Aqui detectamos isso, avisamos
+// na tela e recarregamos assim que a conexão volta.
+const recarregadoresRealtime = new Map();
+let canaisComProblema = new Set();
+
+function monitorarCanal(estado, recarregar, chave){
+  recarregadoresRealtime.set(chave, recarregar);
+
+  if(estado === 'SUBSCRIBED'){
+    canaisComProblema.delete(chave);
+    // Recarrega ao (re)assinar: cobre o que mudou enquanto estávamos fora.
+    recarregar();
+    if(canaisComProblema.size === 0) esconderAvisoDesatualizado();
+  } else if(estado === 'CHANNEL_ERROR' || estado === 'TIMED_OUT' || estado === 'CLOSED'){
+    canaisComProblema.add(chave);
+    mostrarAvisoDesatualizado();
+  }
+}
+
+function mostrarAvisoDesatualizado(){
+  const el = document.getElementById('aviso-desatualizado');
+  if(el) el.classList.remove('hidden');
+}
+function esconderAvisoDesatualizado(){
+  const el = document.getElementById('aviso-desatualizado');
+  if(el) el.classList.add('hidden');
+}
+
+// Recarrega tudo do servidor, ignorando o que estava em memória.
+async function recarregarTudoDoServidor(){
+  const tarefas = [];
+  recarregadoresRealtime.forEach(recarregar => tarefas.push(recarregar()));
+  await Promise.all(tarefas);
+}
+
 const SUPABASE_URL = 'https://pdpuclwikqdxppsmnubs.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_hiI4s-wGrHkN4BGhVpe63g_4rRps0YE';
 let supabaseClient = null;
@@ -1197,7 +1252,7 @@ function criarColecaoSupabase(nomeColecao){
         carregar();
         canal = supabaseClient.channel(`realtime-${nomeColecao}-${String(id)}`)
           .on('postgres_changes', {event:'*', schema:'public', table:nomeColecao, filter:`id=eq.${String(id)}`}, carregar)
-          .subscribe();
+          .subscribe(estado => monitorarCanal(estado, carregar, `${nomeColecao}:${id}`));
         return () => { if(canal) supabaseClient.removeChannel(canal); };
       }
     };
@@ -1218,7 +1273,7 @@ function criarColecaoSupabase(nomeColecao){
       carregar();
       canal = supabaseClient.channel(`realtime-${nomeColecao}`)
         .on('postgres_changes', {event:'*', schema:'public', table:nomeColecao}, carregar)
-        .subscribe();
+        .subscribe(estado => monitorarCanal(estado, carregar, nomeColecao));
       return () => { if(canal) supabaseClient.removeChannel(canal); };
     }
   };
@@ -1234,8 +1289,39 @@ function criarBatchSupabase(){
   };
 }
 
-try{
-  if(!window.supabase || !window.supabase.createClient) throw new Error('Biblioteca do Supabase não carregada');
+// Carrega a biblioteca do Supabase sob demanda. O <script> do topo da página
+// pode falhar se o celular abrir o app antes do wi-fi conectar de verdade, ou se
+// aquele CDN estiver bloqueado/lento na rede da empresa — então aqui tentamos de
+// novo, inclusive por um endereço alternativo.
+const CDNS_SUPABASE = [
+  'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
+  'https://unpkg.com/@supabase/supabase-js@2'
+];
+
+function carregarScript(url){
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = url;
+    s.onload = resolve;
+    s.onerror = () => reject(new Error('Falha ao carregar ' + url));
+    document.head.appendChild(s);
+  });
+}
+
+async function garantirBibliotecaSupabase(){
+  if(window.supabase && window.supabase.createClient) return true;
+  for(const url of CDNS_SUPABASE){
+    try{
+      await carregarScript(url);
+      if(window.supabase && window.supabase.createClient) return true;
+    }catch(e){
+      console.warn('CDN indisponível:', url);
+    }
+  }
+  return false;
+}
+
+function montarClienteSupabase(){
   supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
   fdb = {collection: criarColecaoSupabase, batch: criarBatchSupabase, async runTransaction(callback){
     const transacao = {get: ref => ref.get(), set: (ref, dados) => ref.set(dados), update: (ref, dados) => ref.update(dados)};
@@ -1243,6 +1329,11 @@ try{
   }};
   supabaseCompat = {firestore: {FieldValue: {serverTimestamp: () => agoraServidorISO()}, Timestamp: {fromDate: d => d instanceof Date ? d.toISOString() : d}}};
   supabaseOk = true;
+}
+
+try{
+  if(!window.supabase || !window.supabase.createClient) throw new Error('Biblioteca do Supabase não carregada');
+  montarClienteSupabase();
 }catch(e){
   console.error('Erro ao iniciar Supabase', e);
   supabaseOk = false;
@@ -1255,6 +1346,47 @@ function mostrarAvisoSemInternet(){
 function esconderAvisoSemInternet(){
   const aviso = document.getElementById('aviso-offline');
   if(aviso) aviso.classList.add('hidden');
+}
+
+// Tenta reconectar sem precisar fechar e abrir o app. Cobre o caso em que o
+// aparelho ficou marcado como offline logo na abertura (biblioteca não carregou
+// ou rede ainda não tinha subido) e a internet já voltou desde então.
+let sincronizacoesIniciadas = false;
+let reconectando = false;
+
+async function tentarReconectar(){
+  if(reconectando) return;
+  reconectando = true;
+  const btn = document.getElementById('btn-tentar-reconectar');
+  const texto = document.getElementById('aviso-offline-texto');
+  if(btn) travarBotao(btn, 'Reconectando...');
+
+  try{
+    if(!supabaseOk){
+      const temBiblioteca = await garantirBibliotecaSupabase();
+      if(!temBiblioteca){
+        if(texto) texto.textContent = '⚠️ Não foi possível carregar o app. Verifique a internet e tente de novo.';
+        return;
+      }
+      montarClienteSupabase();
+    }
+
+    // Confirma que o banco responde de verdade antes de dar como conectado.
+    const teste = await supabaseClient.from('config').select('id').limit(1);
+    if(teste.error) throw teste.error;
+
+    esconderAvisoSemInternet();
+    if(texto) texto.textContent = '⚠️ Sem conexão com o servidor. Os dados não estão sendo sincronizados com os outros celulares no momento.';
+    mostrarToast('Conectado novamente.', 'ok');
+
+    if(!sincronizacoesIniciadas) await iniciarTudo();
+  }catch(e){
+    console.error('Falha ao reconectar', e);
+    if(texto) texto.textContent = '⚠️ Ainda sem conexão com o servidor. Verifique a internet e tente de novo.';
+  }finally{
+    if(btn) destravarBotao(btn);
+    reconectando = false;
+  }
 }
 
 // Sincronização de relógio com o servidor do Supabase. Em vez de confiar no
@@ -1328,6 +1460,16 @@ function isNativeApp(){
 }
 
 function iniciarVerificacaoAtualizacao(){
+  // Mostra no rodapé qual versão está rodando neste aparelho. Ajuda a descobrir
+  // rapidamente quando um celular está com um APK antigo (o site atualiza a cada
+  // publicação, mas o APK só muda quando a pessoa instala a versão nova).
+  const rodape = document.getElementById('rodape-versao');
+  if(rodape){
+    rodape.textContent = isNativeApp()
+      ? `App instalado — versão ${APP_BUILD}`
+      : 'Versão web (sempre atualizada)';
+  }
+
   if(!supabaseOk || !isNativeApp()) return;
   fdb.collection('config').doc('app').onSnapshot((doc) => {
     if(!doc.exists) return;
@@ -4555,11 +4697,9 @@ function renderResultadoBusca(){
 document.getElementById('btn-voltar-busca').addEventListener('click', voltarDaBusca);
 document.getElementById('in-busca').addEventListener('input', renderResultadoBusca);
 
-(async function init(){
-  if(!supabaseOk){
-    mostrarAvisoSemInternet();
-    return;
-  }
+async function iniciarTudo(){
+  if(sincronizacoesIniciadas) return;
+  sincronizacoesIniciadas = true;
   await sincronizarRelogioServidor();
   setInterval(sincronizarRelogioServidor, 5 * 60 * 1000);
   iniciarSincronizacaoUsuarios();
@@ -4572,6 +4712,59 @@ document.getElementById('in-busca').addEventListener('input', renderResultadoBus
   iniciarSincronizacaoClientesRede();
   iniciarSincronizacaoProdutosBarcode();
   iniciarVerificacaoAtualizacao();
+}
+
+document.getElementById('btn-tentar-reconectar').addEventListener('click', tentarReconectar);
+
+document.getElementById('btn-recarregar-dados').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-recarregar-dados');
+  travarBotao(btn, 'Atualizando...');
+  try{
+    await recarregarTudoDoServidor();
+    esconderAvisoDesatualizado();
+    canaisComProblema.clear();
+    mostrarToast('Dados atualizados.', 'ok');
+  }catch(e){
+    mostrarToast('Não foi possível atualizar. Verifique a internet.', 'erro');
+  }finally{
+    destravarBotao(btn);
+  }
+});
+
+// Quando a pessoa volta pro app depois de deixá-lo em segundo plano, o WebSocket
+// pode ter caído sem aviso. Recarrega do servidor para não trabalhar em cima de
+// dados velhos (ex: um pedido que outra pessoa já finalizou).
+document.addEventListener('visibilitychange', () => {
+  if(document.visibilityState === 'visible' && supabaseOk && sincronizacoesIniciadas){
+    recarregarTudoDoServidor().catch(e => console.error('Falha ao recarregar ao voltar', e));
+  }
+});
+
+// Quando o aparelho recupera a rede (saiu do modo avião, wi-fi voltou), tenta
+// reconectar sozinho, sem a pessoa precisar fechar e abrir o app.
+window.addEventListener('online', () => {
+  if(!supabaseOk || !sincronizacoesIniciadas) tentarReconectar();
+});
+
+(async function init(){
+  // Mostra a versão no rodapé antes de qualquer coisa, para ficar visível mesmo
+  // se o app abrir sem conexão.
+  const rodape = document.getElementById('rodape-versao');
+  if(rodape){
+    rodape.textContent = isNativeApp()
+      ? `App instalado — versão ${APP_BUILD}`
+      : 'Versão web (sempre atualizada)';
+  }
+
+  if(!supabaseOk){
+    // A biblioteca não carregou na abertura. Tenta de novo por conta própria
+    // antes de mostrar o aviso — normalmente resolve quando o app abriu junto
+    // com o celular, antes da rede subir.
+    mostrarAvisoSemInternet();
+    setTimeout(tentarReconectar, 1500);
+    return;
+  }
+  await iniciarTudo();
 })();
 </script>
 </body>
