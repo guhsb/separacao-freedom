@@ -755,13 +755,6 @@ select:focus{ outline:none; border-bottom-color:var(--pink); border-bottom-style
       <div id="import-pedidos-status" class="times-text" style="margin-top:8px;"></div>
     </div>
 
-    <div class="panel">
-      <h2>Importar CSV de clientes (código + rede)</h2>
-      <p class="risk-text">Não é mais necessário se você já está usando o CSV com itens/rede acima — a rede já vem junto. Isso aqui seria só um reforço, caso um dia você tenha uma lista separada de clientes por rede.</p>
-      <input type="file" id="in-csv-clientes" accept=".csv" disabled>
-      <button class="btn" id="btn-importar-csv-clientes" style="margin-top:10px;" disabled>Importar CSV (em breve)</button>
-    </div>
-
     <div class="section-title">Pedidos bloqueados agora (revisão)</div>
     <div class="panel">
       <p class="risk-text">Esses pedidos estão bloqueados neste momento — por terem item bloqueado, serem de rede bloqueada, terem sido bloqueados manualmente, ou porque <b>outro pedido do mesmo cliente está bloqueado</b> (pedidos do mesmo cliente costumam ser enviados juntos, pra reduzir frete). Se algum desses puder ser enviado mesmo assim, clique em "Liberar" — só aquele pedido específico passa a aparecer pra separação.</p>
@@ -2469,7 +2462,6 @@ async function garantirMastersPadrao(){
 let pedidosCatalogo = [];
 let redesConfig = [];
 let itensBloqueados = [];
-let clientesRede = [];
 let produtosBarcodeMap = {};
 
 /* =========================================================
@@ -2623,18 +2615,6 @@ function iniciarSincronizacaoItensBloqueados(){
       renderListaPedidosBloqueadosRevisao();
     }
   }, (erro) => console.error('Erro de sincronização (itens bloqueados)', erro));
-}
-
-function iniciarSincronizacaoClientesRede(){
-  if(!supabaseOk) return;
-  fdb.collection('clientes_rede').onSnapshot((snapshot) => {
-    clientesRede = snapshot.docs.map(doc => doc.data());
-  }, (erro) => console.error('Erro de sincronização (clientes/rede)', erro));
-}
-
-function getRedeDoCliente(codCliente){
-  const c = clientesRede.find(x => String(x.codCliente) === String(codCliente));
-  return c && c.rede ? c.rede : null;
 }
 
 function mostrarTelaPedidosArea(){
@@ -3233,7 +3213,7 @@ ligarAutocomplete('in-usuario-redes', sugerirRedes);
 // Sem redes definidas (ou sendo master), vê tudo.
 // Descobre a rede de um pedido do catálogo
 function redeDoPedido(p){
-  return String(p.rede || getRedeDoCliente(p.codCliente) || '').trim();
+  return String(p.rede || '').trim();
 }
 
 // Quem é o dono de uma rede (o separador para quem ela foi reservada).
@@ -3359,7 +3339,7 @@ function renderListaPedidosBloqueadosRevisao(){
   // grupo separado pra cada cliente.
   function causaRaiz(p){
     if(redeDoPedidoEstaBloqueada(p)){
-      const rede = p.rede || getRedeDoCliente(p.codCliente) || '—';
+      const rede = p.rede || '—';
       return {chave: 'rede:' + rede, titulo: `Rede bloqueada: ${rede}`};
     }
     if(pedidoTemItemBloqueado(p)){
@@ -3809,7 +3789,7 @@ async function gerarDashboard(){
     let contaItemEspecifico = false;
 
     if(redeDoPedidoEstaBloqueada(p)){
-      chave = 'Rede: ' + (p.rede || getRedeDoCliente(p.codCliente) || '—');
+      chave = 'Rede: ' + (p.rede || '—');
     } else if(pedidoTemItemBloqueado(p)){
       let desc = 'Item bloqueado';
       let qtdeDoItem = 0;
@@ -4653,7 +4633,7 @@ function ticketAndamento(p){
         <button class="btn ghost" data-editar="${p.id}">Editar</button>
         <button class="btn ghost" data-cancelar="${p.id}">Cancelar</button>
         ${botaoPendenciaOuRetomar}
-        ${(!p.pendente || podeFinalizarPendente()) ? `<button class="btn confirm" data-finish="${p.id}">Finalizar pedido</button>` : ''}
+        ${(!p.pendente || podeFinalizarPendente(p)) ? `<button class="btn confirm" data-finish="${p.id}">Finalizar pedido</button>` : ''}
       </div>
     </div>
   </div>`;
@@ -4892,8 +4872,14 @@ let pedidoPendenciaContext = null;
 // Um pedido parado normalmente precisa ser retomado antes de finalizar. Mas
 // quem cuida das pendências (Área de Pedidos ou Master) enxerga todas elas e
 // costuma resolver na hora — para essas pessoas o botão continua disponível.
-function podeFinalizarPendente(){
-  return !!(usuarioLogado && (usuarioLogado.podePedidosArea || usuarioLogado.podeMaster));
+// Pode finalizar um pedido parado: quem cuida das pendências (Área de Pedidos
+// ou Master) e também o próprio separador que o parou — ele é quem sabe se o
+// problema já foi resolvido.
+function podeFinalizarPendente(p){
+  if(!usuarioLogado) return false;
+  if(usuarioLogado.podePedidosArea || usuarioLogado.podeMaster) return true;
+  if(p && String(p.nome || '') === String(usuarioLogado.nome || '')) return true;
+  return false;
 }
 
 function irmaosAbertosDoPedido(id){
@@ -5502,7 +5488,7 @@ function pedidoTemItemBloqueado(p){
 }
 
 function redeDoPedidoEstaBloqueada(p){
-  const rede = p.rede || getRedeDoCliente(p.codCliente);
+  const rede = p.rede;
   return !!(rede && redesConfig.some(r => r.nome === rede && r.bloqueada));
 }
 
@@ -5533,7 +5519,7 @@ function motivoBloqueio(p){
   if(p.liberado) return null;
   if(p.bloqueado) return 'Bloqueado manualmente';
   if(pedidoTemItemBloqueado(p)) return 'Contém item bloqueado';
-  if(redeDoPedidoEstaBloqueada(p)) return `Rede bloqueada (${p.rede || getRedeDoCliente(p.codCliente)})`;
+  if(redeDoPedidoEstaBloqueada(p)) return `Rede bloqueada (${p.rede})`;
   const outro = pedidosCatalogo.find(x => x.codCliente === p.codCliente && x.numero !== p.numero && temBloqueioDireto(x));
   if(outro) return `Pedido #${outro.numero} do mesmo cliente está bloqueado (agrupados para reduzir frete)`;
   return null;
@@ -5594,7 +5580,7 @@ document.getElementById('in-motivo-liberacao').addEventListener('keydown', (e) =
 
 function pedidoEhPrioridade(p){
   if(p.prioridade) return true;
-  const rede = p.rede || getRedeDoCliente(p.codCliente);
+  const rede = p.rede;
   if(rede && redesConfig.some(r => r.nome === rede && r.prioridade)) return true;
   return false;
 }
@@ -6198,7 +6184,6 @@ async function iniciarTudo(){
   iniciarSincronizacaoPedidosCatalogo();
   iniciarSincronizacaoRedesConfig();
   iniciarSincronizacaoItensBloqueados();
-  iniciarSincronizacaoClientesRede();
   iniciarSincronizacaoProdutosBarcode();
   iniciarSincronizacaoAvisos();
   iniciarSincronizacaoPresenca();
