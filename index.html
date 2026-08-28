@@ -788,12 +788,6 @@ select:focus{ outline:none; border-bottom-color:var(--pink); border-bottom-style
 
     <div class="section-title">Valores mínimos de pedido</div>
     <div class="panel">
-      <h2>Mínimo por região</h2>
-      <p class="risk-text">Ajuste rápido dos valores. Para mexer nas cidades e estados de cada região, use a Área de Pedidos.</p>
-      <div id="lista-minimos-master"></div>
-    </div>
-
-    <div class="panel">
       <h2>Redes com regra própria</h2>
       <p class="risk-text">Por padrão, todo pedido segue o mínimo da região dele — inclusive os de rede. Cadastre aqui as redes que fogem dessa regra: deixe o valor em <b>0</b> para a rede ficar isenta, ou informe um valor para ela ter o próprio mínimo.</p>
       <div class="grid">
@@ -852,7 +846,7 @@ select:focus{ outline:none; border-bottom-color:var(--pink); border-bottom-style
       <div class="grupo-area-corpo" id="area-resolver">
     <div class="section-title">Itens faltando (pedidos parados)</div>
     <div class="panel">
-      <p class="risk-text">Pedidos que os separadores pararam por falta de item. Providencie o item e marque como resolvido.</p>
+      <p class="risk-text">Pedidos que os separadores pararam por falta de item, agrupados pelo item que está travando. A lista se atualiza sozinha: assim que o separador retoma ou finaliza o pedido, ele sai daqui. Use <b>"Bloquear este item"</b> para travar o item em todos os pedidos até a reposição chegar.</p>
       <div id="lista-avisos-itens"></div>
     </div>
 
@@ -1395,6 +1389,18 @@ select:focus{ outline:none; border-bottom-color:var(--pink); border-bottom-style
         <label>Motivo</label>
         <input id="in-motivo-liberacao" type="text" placeholder="">
       </div>
+
+      <div id="liberacao-irmaos-wrap" class="hidden">
+        <label class="m-label" style="margin-bottom:4px;">Quais pedidos deste cliente liberar?</label>
+        <p class="modal-subtitulo" style="margin:0 0 8px 0;">Os pedidos do cliente saem na mesma carga. Se liberar só um, os outros continuam travados.</p>
+        <div style="margin-bottom:8px;">
+          <button type="button" class="link-trocar" id="liberacao-marcar-todos">marcar todos</button>
+          <span class="bar-sep">·</span>
+          <button type="button" class="link-trocar" id="liberacao-desmarcar-todos">desmarcar todos</button>
+        </div>
+        <div id="liberacao-irmaos-lista"></div>
+      </div>
+
       <div class="error" id="motivo-liberacao-erro">Digite o motivo antes de confirmar.</div>
       <div class="modal-botoes">
         <button class="btn" id="modal-motivo-liberacao-cancelar">Cancelar</button>
@@ -2219,6 +2225,11 @@ function iniciarSincronizacaoPedidos(){
     if(!document.getElementById('pendentes-area-screen').classList.contains('hidden')){
       renderPendentesArea();
     }
+    if(!document.getElementById('pedidos-area-screen').classList.contains('hidden')){
+      renderAvisosItens();
+      atualizarContadoresArea();
+    }
+    atualizarAvisoItensFaltando();
     atualizarAvisoPendentes();
     atualizarPainelInicial();
   };
@@ -2506,7 +2517,7 @@ function atualizarPainelInicial(){
   const itensAbertos = disponiveis.reduce((s, p) => s + (parseFloat(p.qtdeItens) || 0), 0);
   if(itensAbertos > 0) extras.push(`${Math.round(itensAbertos)} itens a separar`);
   if(aguardando.length > 0) extras.push(`${aguardando.length} aguardando o cliente`);
-  const avisosAbertos = avisosItens.filter(a => !a.resolvido).length;
+  const avisosAbertos = avisosDeItemFaltando().length;
   if(avisosAbertos > 0) extras.push(`${avisosAbertos} com item faltando`);
   const separando = new Set(emAndamento.map(p => p.nome).filter(Boolean));
   if(separando.size > 0) extras.push(`${separando.size} separando agora`);
@@ -2585,7 +2596,6 @@ function mostrarTelaMaster(){
   document.getElementById('in-novo-usuario-senha').value = '';
   document.getElementById('cadastro-usuario-error').style.display = 'none';
   renderListaUsuarios();
-  renderListaMinimosMaster();
   renderListaRedesMinimo();
   atualizarAvisoPendentes();
 }
@@ -3394,9 +3404,6 @@ function iniciarSincronizacaoRegioes(){
       renderListaRegioes();
       renderListaPedidosBloqueadosRevisao();
     }
-    if(!document.getElementById('master-screen').classList.contains('hidden')){
-      renderListaMinimosMaster();
-    }
   }, (erro) => console.error('Erro de sincronização (regiões)', erro));
 }
 
@@ -3450,7 +3457,15 @@ function minimoAplicavel(p){
   return null;
 }
 
+// O valor mínimo é regra comercial de venda. Comodato e bonificação não são
+// faturamento, então não entram na conta nem travam o cliente por esse motivo.
+function pedidoEntraNoMinimo(p){
+  const tipo = p.tipoPedido || obterTipoPedido(p.codPortador);
+  return String(tipo).trim().toLowerCase() === 'venda';
+}
+
 function abaixoDoMinimoDaRegiao(p){
+  if(!pedidoEntraNoMinimo(p)) return false;
   const regra = minimoAplicavel(p);
   if(!regra || regra.minimo <= 0) return false;
   return (parseFloat(p.valorTotal) || 0) < regra.minimo;
@@ -3516,6 +3531,28 @@ async function tirarLugarDaRegiao(id, tipo, valor){
   const chave = tipo === 'cidade' ? 'cidades' : 'estados';
   const lista = (r[chave] || []).filter(x => norm(x) !== norm(valor));
   await salvarRegiao({...r, [chave]: lista});
+}
+
+// Salva o valor mínimo ao sair do campo, dentro do cartão de cada região.
+function ligarEdicaoMinimoRegiao(el){
+  el.querySelectorAll('.input-minimo-regiao').forEach(input => {
+    input.addEventListener('blur', async () => {
+      const id = input.getAttribute('data-regiao-id');
+      const r = regioesMinimo.find(x => x.id === id);
+      if(!r) return;
+      const novoValor = parseNumeroBR(input.value.trim());
+      if(isNaN(novoValor) || novoValor < 0){
+        input.value = fmtValor(r.minimo);
+        return;
+      }
+      if(novoValor === (parseFloat(r.minimo) || 0)) return;
+      await salvarRegiao({...r, minimo: novoValor});
+      mostrarToast(`${r.nome}: mínimo agora é R$ ${fmtValor(novoValor)}.`, 'ok');
+    });
+    input.addEventListener('keydown', (e) => {
+      if(e.key === 'Enter'){ e.preventDefault(); input.blur(); }
+    });
+  });
 }
 
 function renderListaRegioes(){
@@ -3678,7 +3715,7 @@ function atualizarContadoresArea(){
     el.classList.toggle('alerta', !!alerta);
   };
 
-  const avisosAbertos = avisosItens.filter(a => !a.resolvido).length;
+  const avisosAbertos = avisosDeItemFaltando().length;
   const bloqueados = pedidosCatalogo.filter(p => pedidoEstaBloqueado(p) && !pedidoJaIniciado(p.numero)).length;
   const partes = [];
   if(bloqueados) partes.push(`${bloqueados} bloqueado(s)`);
@@ -3783,55 +3820,6 @@ function renderListaRedesMinimo(){
 
   el.querySelectorAll('[data-remover-rede-minimo]').forEach(btn => {
     btn.addEventListener('click', () => removerRedeMinimo(btn.getAttribute('data-remover-rede-minimo')));
-  });
-}
-
-// Ajuste rápido dos mínimos de cada região, sem sair da Área Master
-function renderListaMinimosMaster(){
-  const el = document.getElementById('lista-minimos-master');
-  if(!el) return;
-
-  if(regioesMinimo.length === 0){
-    el.innerHTML = '<div class="empty-state">Nenhuma região cadastrada. Crie na Área de Pedidos.</div>';
-    return;
-  }
-
-  el.innerHTML = regioesMinimo
-    .slice()
-    .sort((a, b) => (parseFloat(a.minimo) || 0) - (parseFloat(b.minimo) || 0))
-    .map(r => `
-      <div class="bloqueio-item" style="align-items:center; gap:10px;">
-        <span class="irmao-item-info">
-          <b>${escapeHtml(r.nome)}</b>
-          <span class="irmao-item-sec">${(r.estados || []).length ? (r.estados || []).join(', ') + ' · ' : ''}${(r.cidades || []).length} cidade(s)</span>
-        </span>
-        <input type="text" inputmode="decimal" class="input-minimo-regiao"
-               data-regiao-id="${escapeHtml(r.id)}" value="${fmtValor(r.minimo)}"
-               style="width:110px; flex-shrink:0; text-align:right;">
-      </div>`).join('');
-
-  ligarEdicaoMinimoRegiao(el);
-}
-
-// Salva o mínimo ao sair do campo. Usado nas duas telas (Master e Pedidos).
-function ligarEdicaoMinimoRegiao(el){
-  el.querySelectorAll('.input-minimo-regiao').forEach(input => {
-    input.addEventListener('blur', async () => {
-      const id = input.getAttribute('data-regiao-id');
-      const r = regioesMinimo.find(x => x.id === id);
-      if(!r) return;
-      const novo = parseNumeroBR(input.value.trim());
-      if(isNaN(novo) || novo < 0){
-        input.value = fmtValor(r.minimo);
-        return;
-      }
-      if(novo === (parseFloat(r.minimo) || 0)) return;
-      await salvarRegiao({...r, minimo: novo});
-      mostrarToast(`${r.nome}: mínimo agora é R$ ${fmtValor(novo)}.`, 'ok');
-    });
-    input.addEventListener('keydown', (e) => {
-      if(e.key === 'Enter'){ e.preventDefault(); input.blur(); }
-    });
   });
 }
 
@@ -4670,7 +4658,7 @@ async function gerarDashboard(){
         // Uma seção só, por item: mostra o que está travando, quais clientes,
         // quanto vale e quantos pedidos. Antes isso aparecia dividido em duas
         // listas ("itens travando" e "motivos"), repetindo a mesma informação.
-        const abertos = avisosItens.filter(a => !a.resolvido);
+        const abertos = avisosDeItemFaltando();
         const porItem = {};
 
         abertos.forEach(a => {
@@ -4727,9 +4715,8 @@ async function gerarDashboard(){
         <div class="times-text" style="margin-top:14px; font-weight:700;">Outras pendências (sem item identificado):</div>
         ${motivosOrdenados.filter(m => {
           // Não repete motivos que já apareceram na lista de itens acima
-          const temAviso = avisosItens.some(a => !a.resolvido &&
-            String(a.motivo || '').trim() === String(m).trim() &&
-            (a.itens || []).length > 0);
+          const temAviso = avisosDeItemFaltando().some(a =>
+            String(a.motivo || '').trim() === String(m).trim());
           return !temAviso;
         }).map(m => `
           <div class="dash-linha">
@@ -5737,41 +5724,32 @@ function renderIrmaosPendencia(irmaos, idPrincipal){
    Área de Pedidos precisa saber para providenciar. O aviso fica registrado
    até alguém marcar como resolvido.
    ========================================================= */
-let avisosItens = [];
-
-function iniciarSincronizacaoAvisos(){
-  if(!supabaseOk) return;
-  fdb.collection('avisos_itens').onSnapshot((snapshot) => {
-    avisosItens = snapshot.docs.map(doc => doc.data());
-    atualizarAvisoItensFaltando();
-    if(!document.getElementById('pedidos-area-screen').classList.contains('hidden')){
-      renderAvisosItens();
-    }
-  }, (erro) => console.error('Erro de sincronização (avisos)', erro));
-}
-
-async function registrarAvisoItensFaltando(pedidoId, numeroPedido, motivo, itens){
-  const p = pedidos.find(x => x.id === pedidoId) || {};
-  const id = 'aviso_' + numeroPedido + '_' + Date.now();
-  try{
-    await fdb.collection('avisos_itens').doc(id).set({
-      id,
-      pedidoId,
-      numeroPedido: String(numeroPedido),
+// Os pedidos parados por falta de item são lidos direto dos próprios pedidos,
+// em vez de uma lista paralela. Assim é impossível um pedido ficar pendente por
+// falta de item e não aparecer aqui — o que acontecia quando o registro
+// paralelo falhava por qualquer motivo.
+function avisosDeItemFaltando(){
+  return pedidos
+    .filter(p => p.pendente && !p.horaFim)
+    .map(p => ({
+      id: p.id,
+      pedidoId: p.id,
+      numeroPedido: String(p.numero),
       cliente: p.cliente || '',
       separador: p.nome || '',
-      motivo: motivo || '',
-      itens: itens,
-      criadoEm: agoraServidorISO(),
+      motivo: p.motivoPendencia || '',
+      // Quando o separador não marcou item nenhum, usamos o motivo como
+      // descrição para o pedido não sumir da lista.
+      itens: (Array.isArray(p.itensFaltando) && p.itensFaltando.length)
+        ? p.itensFaltando
+        : [{codProduto: '', produto: p.motivoPendencia || 'Não especificado', qtde: ''}],
+      criadoEm: p.horaInicio,
       resolvido: false
-    });
-  }catch(e){
-    console.error('Não foi possível registrar o aviso de itens faltando', e);
-  }
+    }));
 }
 
-// Bloqueia direto da tela de avisos: evita que a pessoa tenha que copiar o
-// código e ir até a seção de itens bloqueados.
+// Bloqueia o item direto da lista, evitando ter que copiar o código e ir até a
+// seção de itens bloqueados. Mostra o impacto antes de confirmar.
 async function bloquearItemDoAviso(termo){
   const alvo = String(termo || '').trim();
   if(!alvo) return;
@@ -5784,7 +5762,6 @@ async function bloquearItemDoAviso(termo){
     return;
   }
 
-  // Mostra o impacto antes de confirmar: quantos pedidos vão parar por causa disso
   const afetados = pedidosCatalogo.filter(p =>
     !p.conferido && !pedidoJaIniciado(p.numero) &&
     (p.itens || []).some(it =>
@@ -5812,35 +5789,26 @@ async function bloquearItemDoAviso(termo){
   }
 }
 
-async function marcarAvisoResolvido(id){
-  try{
-    await fdb.collection('avisos_itens').doc(id).set({resolvido: true, resolvidoEm: agoraServidorISO()}, {merge: true});
-    mostrarToast('Aviso marcado como resolvido.', 'ok');
-  }catch(e){
-    mostrarAvisoSemInternet();
-  }
-}
-
-// Faixa de aviso para quem tem acesso à Área de Pedidos
+// Faixa de aviso para quem tem acesso à Área de Pedidos, mostrando quantos
+// pedidos estão parados por falta de item.
 function atualizarAvisoItensFaltando(){
   const el = document.getElementById('aviso-itens-faltando');
   if(!el) return;
   const podeVer = usuarioLogado && (usuarioLogado.podePedidosArea || usuarioLogado.podeMaster);
-  const abertos = avisosItens.filter(a => !a.resolvido);
+  const abertos = avisosDeItemFaltando();
 
   if(!podeVer || abertos.length === 0){
     el.classList.add('hidden');
     return;
   }
-  const totalItens = abertos.reduce((s, a) => s + ((a.itens || []).length), 0);
-  el.innerHTML = `⚠️ <b>${abertos.length} pedido(s)</b> parados por falta de item (${totalItens} item/itens). Veja em <b>Área de Pedidos</b>.`;
+  el.innerHTML = `⚠️ <b>${abertos.length} pedido(s)</b> parados por falta de item. Veja em <b>Área de Pedidos</b>.`;
   el.classList.remove('hidden');
 }
 
 function renderAvisosItens(){
   const el = document.getElementById('lista-avisos-itens');
   if(!el) return;
-  const abertos = avisosItens.filter(a => !a.resolvido);
+  const abertos = avisosDeItemFaltando();
 
   if(abertos.length === 0){
     el.innerHTML = '<div class="empty-state">Nenhum item faltando no momento.</div>';
@@ -5902,7 +5870,6 @@ function renderAvisosItens(){
                 ${aviso.motivo ? '<br>Motivo: ' + escapeHtml(aviso.motivo) : ''}
               </span>
             </span>
-            <button class="link-trocar" data-resolver-aviso="${escapeHtml(aviso.id)}">resolvido</button>
           </div>`).join('')}
       </div>
     </div>`;
@@ -5916,9 +5883,6 @@ function renderAvisosItens(){
       const chevron = btn.querySelector('.bloqueio-grupo-chevron');
       if(chevron) chevron.classList.toggle('aberto');
     });
-  });
-  el.querySelectorAll('[data-resolver-aviso]').forEach(btn => {
-    btn.addEventListener('click', () => marcarAvisoResolvido(btn.getAttribute('data-resolver-aviso')));
   });
   el.querySelectorAll('[data-bloquear-item-aviso]').forEach(btn => {
     btn.addEventListener('click', () => bloquearItemDoAviso(btn.getAttribute('data-bloquear-item-aviso')));
@@ -6043,10 +6007,6 @@ async function confirmarMotivoPendencia(){
       });
     });
     await lote.commit();
-
-    if(itensFaltando.length > 0){
-      await registrarAvisoItensFaltando(idPrincipal, numPrincipal, motivo, itensFaltando);
-    }
 
     mostrarToast(
       juntos.length
@@ -6347,14 +6307,68 @@ async function cancelarLiberacaoPedido(numero){
 
 let numeroPedidoLiberandoContext = null;
 
+// Outros pedidos bloqueados do mesmo cliente. Como eles saem na mesma carga,
+// liberar só um costuma não resolver — o restante segue travado.
+function irmaosBloqueadosDoCatalogo(numero){
+  const p = pedidosCatalogo.find(x => String(x.numero) === String(numero));
+  if(!p) return [];
+  return pedidosCatalogo.filter(x =>
+    String(x.numero) !== String(numero) &&
+    x.codCliente === p.codCliente &&
+    !x.conferido &&
+    !pedidoJaIniciado(x.numero) &&
+    pedidoEstaBloqueado(x)
+  );
+}
+
+function renderIrmaosLiberacao(numero){
+  const wrap = document.getElementById('liberacao-irmaos-wrap');
+  const el = document.getElementById('liberacao-irmaos-lista');
+  const principal = pedidosCatalogo.find(x => String(x.numero) === String(numero));
+  const irmaos = irmaosBloqueadosDoCatalogo(numero);
+
+  if(irmaos.length === 0){
+    wrap.classList.add('hidden');
+    el.innerHTML = '';
+    return;
+  }
+  wrap.classList.remove('hidden');
+
+  const linha = (x, ehPrincipal) => `
+    <label class="irmao-item${ehPrincipal ? ' irmao-principal' : ''}">
+      <input type="checkbox" class="liberacao-check" value="${escapeHtml(String(x.numero))}"
+             ${ehPrincipal ? 'checked disabled' : 'checked'}>
+      <span class="irmao-item-info">
+        #${escapeHtml(String(x.numero))}
+        <span class="irmao-item-sec">
+          ${escapeHtml(String(x.qtdeItens === undefined || x.qtdeItens === null ? '—' : x.qtdeItens))} itens · R$ ${fmtValor(x.valorTotal)}${x.tipoPedido ? ' · ' + escapeHtml(x.tipoPedido) : ''}
+          ${ehPrincipal ? '<br>este é o que você clicou' : '<br>' + escapeHtml(motivoBloqueio(x) || 'bloqueado')}
+        </span>
+      </span>
+    </label>`;
+
+  const html = [];
+  if(principal) html.push(linha(principal, true));
+  irmaos.forEach(x => html.push(linha(x, false)));
+  el.innerHTML = html.join('');
+}
+
 function abrirModalMotivoLiberacao(numero){
   numeroPedidoLiberandoContext = numero;
   document.getElementById('in-motivo-liberacao').value = '';
   document.getElementById('motivo-liberacao-erro').style.display = 'none';
+  renderIrmaosLiberacao(numero);
   document.getElementById('modal-motivo-liberacao-overlay').classList.remove('hidden');
   travarScrollFundo();
   setTimeout(() => document.getElementById('in-motivo-liberacao').focus(), 50);
 }
+
+document.getElementById('liberacao-marcar-todos').addEventListener('click', () => {
+  document.querySelectorAll('.liberacao-check:not(:disabled)').forEach(c => { c.checked = true; });
+});
+document.getElementById('liberacao-desmarcar-todos').addEventListener('click', () => {
+  document.querySelectorAll('.liberacao-check:not(:disabled)').forEach(c => { c.checked = false; });
+});
 function fecharModalMotivoLiberacao(){
   document.getElementById('modal-motivo-liberacao-overlay').classList.add('hidden');
   destravarScrollFundo();
@@ -6369,8 +6383,22 @@ async function confirmarMotivoLiberacao(){
   }
   errorEl.style.display = 'none';
   if(numeroPedidoLiberandoContext){
-    await liberarPedido(numeroPedidoLiberandoContext, motivo);
-    mostrarToast('Pedido liberado para separação.', 'ok');
+    const principal = numeroPedidoLiberandoContext;
+
+    // Além do que foi clicado, libera os irmãos que ficaram marcados
+    const juntos = [];
+    document.querySelectorAll('.liberacao-check:checked:not(:disabled)').forEach(chk => {
+      if(String(chk.value) !== String(principal)) juntos.push(chk.value);
+    });
+
+    await liberarPedido(principal, motivo);
+    for(const numero of juntos){
+      await liberarPedido(numero, `${motivo} (liberado junto com #${principal})`);
+    }
+
+    mostrarToast(juntos.length
+      ? `${juntos.length + 1} pedidos do cliente liberados.`
+      : 'Pedido liberado para separação.', 'ok');
   }
   fecharModalMotivoLiberacao();
 }
@@ -7004,7 +7032,6 @@ async function iniciarTudo(){
   iniciarSincronizacaoRedesConfig();
   iniciarSincronizacaoItensBloqueados();
   iniciarSincronizacaoProdutosBarcode();
-  iniciarSincronizacaoAvisos();
   iniciarSincronizacaoPresenca();
   iniciarSincronizacaoOrdemFila();
   iniciarSincronizacaoRegioes();
