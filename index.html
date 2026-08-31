@@ -1381,6 +1381,17 @@ select:focus{ outline:none; border-bottom-color:var(--pink); border-bottom-style
     </div>
   </div>
 
+  <div id="modal-escolher-item-bloquear-overlay" class="modal-overlay hidden">
+    <div class="modal-card">
+      <h2>Qual item bloquear?</h2>
+      <p class="modal-subtitulo">Escolha o produto exato. Bloquear pelo código pega todos os pedidos que tenham esse item, o que não acontece bloqueando pelo texto digitado.</p>
+      <div id="escolher-item-lista"></div>
+      <div class="modal-botoes">
+        <button class="btn" id="modal-escolher-item-cancelar">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
   <div id="modal-motivo-liberacao-overlay" class="modal-overlay hidden">
     <div class="modal-card">
       <h2>Liberar pedido</h2>
@@ -5728,25 +5739,148 @@ function renderIrmaosPendencia(irmaos, idPrincipal){
 // em vez de uma lista paralela. Assim é impossível um pedido ficar pendente por
 // falta de item e não aparecer aqui — o que acontecia quando o registro
 // paralelo falhava por qualquer motivo.
+// Quebra um texto solto ("1 kit chaveiro, 2 pelúcia urso e L/branco") nos itens
+// que ele descreve, e tenta casar cada pedaço com um produto real do pedido —
+// assim o agrupamento fica por item, e não pela frase inteira.
+function separarItensDoTexto(texto, itensDoPedido){
+  const partes = String(texto || '').split(/,|;| e /i);
+  const achados = [];
+
+  partes.forEach(parte => {
+    const bruto = parte.trim();
+    if(bruto.length < 3) return;
+
+    // Tira a quantidade do começo ("2 pelúcia gato" -> "pelúcia gato")
+    const mQtd = bruto.match(/^(\d+)\s*x?\s*/);
+    const qtde = mQtd ? mQtd[1] : '';
+    const descricao = bruto.replace(/^(\d+)\s*x?\s*/, '').trim();
+    if(descricao.length < 3) return;
+
+    // Procura o produto do pedido que mais combina com essa descrição
+    const palavras = norm(descricao).split(/[^a-z0-9]+/).filter(w => w.length >= 3);
+    let melhor = null, melhorNota = 0;
+    (itensDoPedido || []).forEach(it => {
+      const alvo = norm((it.codProduto || '') + ' ' + (it.produto || ''));
+      if(!palavras.length) return;
+      const acertos = palavras.filter(w => alvo.includes(w)).length;
+      const nota = acertos / palavras.length;
+      if(nota > melhorNota){ melhorNota = nota; melhor = it; }
+    });
+
+    if(melhor && melhorNota >= 0.6){
+      achados.push({codProduto: melhor.codProduto || '', produto: melhor.produto || '', qtde: melhor.qtde || qtde});
+    } else {
+      achados.push({codProduto: '', produto: descricao, qtde});
+    }
+  });
+
+  // Pedaços diferentes do texto podem apontar para o mesmo produto
+  // ("pelúcia urso c/coração" e "L/branco"), então tiramos as repetições.
+  const vistos = new Set();
+  return achados.filter(it => {
+    const chave = norm(it.codProduto || it.produto);
+    if(vistos.has(chave)) return false;
+    vistos.add(chave);
+    return true;
+  });
+}
+
 function avisosDeItemFaltando(){
   return pedidos
     .filter(p => p.pendente && !p.horaFim)
-    .map(p => ({
-      id: p.id,
-      pedidoId: p.id,
-      numeroPedido: String(p.numero),
-      cliente: p.cliente || '',
-      separador: p.nome || '',
-      motivo: p.motivoPendencia || '',
-      // Quando o separador não marcou item nenhum, usamos o motivo como
-      // descrição para o pedido não sumir da lista.
-      itens: (Array.isArray(p.itensFaltando) && p.itensFaltando.length)
-        ? p.itensFaltando
-        : [{codProduto: '', produto: p.motivoPendencia || 'Não especificado', qtde: ''}],
-      criadoEm: p.horaInicio,
-      resolvido: false
-    }));
+    .map(p => {
+      const marcados = Array.isArray(p.itensFaltando) ? p.itensFaltando : [];
+      const itens = [];
+
+      marcados.forEach(it => {
+        // Item escolhido na lista já vem certo; texto digitado precisa ser quebrado
+        if(it.codProduto){
+          itens.push(it);
+        } else {
+          separarItensDoTexto(it.produto, p.itens).forEach(x => itens.push(x));
+        }
+      });
+
+      // Sem nada marcado, usa o motivo — também quebrado por item
+      if(itens.length === 0){
+        const doMotivo = separarItensDoTexto(p.motivoPendencia, p.itens);
+        if(doMotivo.length) doMotivo.forEach(x => itens.push(x));
+        else itens.push({codProduto: '', produto: p.motivoPendencia || 'Não especificado', qtde: ''});
+      }
+
+      return {
+        id: p.id,
+        pedidoId: p.id,
+        numeroPedido: String(p.numero),
+        cliente: p.cliente || '',
+        separador: p.nome || '',
+        motivo: p.motivoPendencia || '',
+        itens,
+        criadoEm: p.horaInicio,
+        resolvido: false
+      };
+    });
 }
+
+// Quando o separador escreve vários itens de uma vez ("1 kit chaveiro, 2
+// pelúcia urso e L/branco"), bloquear o texto inteiro não pega nada. Aqui
+// abrimos uma tela para escolher o produto exato, de preferência pelo código.
+function abrirEscolhaItemBloquear(chave, numerosPedidos){
+  const el = document.getElementById('escolher-item-lista');
+  const opcoes = [];
+  const vistos = new Set();
+
+  const adicionar = (valor, titulo, detalhe) => {
+    const k = String(valor).toLowerCase().trim();
+    if(!k || vistos.has(k)) return;
+    vistos.add(k);
+    opcoes.push({valor, titulo, detalhe});
+  };
+
+  // 1) Produtos reais dos pedidos afetados — a opção mais confiável
+  (numerosPedidos || []).forEach(num => {
+    const p = pedidos.find(x => String(x.numero) === String(num)) ||
+              pedidosCatalogo.find(x => String(x.numero) === String(num));
+    (p && p.itens ? p.itens : []).forEach(it => {
+      if(!it.codProduto) return;
+      adicionar(it.codProduto, it.codProduto + ' — ' + (it.produto || ''),
+                `${it.qtde || '—'} un. no pedido #${num}`);
+    });
+  });
+
+  // 2) Pedaços do texto digitado, para o caso de o item não estar na lista
+  String(chave || '').split(/,|;| e /i).forEach(parte => {
+    const t = parte.trim().replace(/^\d+\s*/, ''); // tira a quantidade da frente
+    if(t.length >= 3) adicionar(t, t, 'do texto digitado pelo separador');
+  });
+
+  el.innerHTML = opcoes.length
+    ? opcoes.map((o, i) => `
+      <label class="irmao-item" data-escolha-item="${escapeHtml(o.valor)}">
+        <span class="irmao-item-info">
+          ${escapeHtml(o.titulo)}
+          <span class="irmao-item-sec">${escapeHtml(o.detalhe)}</span>
+        </span>
+      </label>`).join('')
+    : '<div class="empty-state">Nada para escolher aqui.</div>';
+
+  el.querySelectorAll('[data-escolha-item]').forEach(item => {
+    item.addEventListener('click', () => {
+      const valor = item.getAttribute('data-escolha-item');
+      fecharEscolhaItemBloquear();
+      bloquearItemDoAviso(valor);
+    });
+  });
+
+  document.getElementById('modal-escolher-item-bloquear-overlay').classList.remove('hidden');
+  travarScrollFundo();
+}
+
+function fecharEscolhaItemBloquear(){
+  document.getElementById('modal-escolher-item-bloquear-overlay').classList.add('hidden');
+  destravarScrollFundo();
+}
+document.getElementById('modal-escolher-item-cancelar').addEventListener('click', fecharEscolhaItemBloquear);
 
 // Bloqueia o item direto da lista, evitando ter que copiar o código e ir até a
 // seção de itens bloqueados. Mostra o impacto antes de confirmar.
@@ -5859,7 +5993,7 @@ function renderAvisosItens(){
           ${g.unidades ? `Faltam <b>${Math.round(g.unidades)}</b> unidade(s) no total.` : ''}
           ${jaBloqueado
             ? ' <b style="color:var(--pink-deep);">Item já bloqueado.</b>'
-            : ` <button class="btn ghost" data-bloquear-item-aviso="${escapeHtml(chave)}">Bloquear este item</button>`}
+            : ` <button class="btn ghost" data-bloquear-item-aviso="${escapeHtml(chave)}" data-pedidos-afetados="${escapeHtml(g.avisos.map(a => a.aviso.numeroPedido).join(','))}">Bloquear este item</button>`}
         </div>
         ${g.avisos.map(({aviso, qtde}) => `
           <div class="bloqueio-item" style="align-items:flex-start;">
@@ -5885,7 +6019,11 @@ function renderAvisosItens(){
     });
   });
   el.querySelectorAll('[data-bloquear-item-aviso]').forEach(btn => {
-    btn.addEventListener('click', () => bloquearItemDoAviso(btn.getAttribute('data-bloquear-item-aviso')));
+    btn.addEventListener('click', () => {
+      const chave = btn.getAttribute('data-bloquear-item-aviso');
+      const nums = (btn.getAttribute('data-pedidos-afetados') || '').split(',').filter(Boolean);
+      abrirEscolhaItemBloquear(chave, nums);
+    });
   });
 }
 
